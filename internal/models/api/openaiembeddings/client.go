@@ -121,6 +121,15 @@ func (c *Client) Embed(
 	if decoded.Error != nil && decoded.Error.Message != "" {
 		return nil, fmt.Errorf("embedding API error: %s", decoded.Error.Message)
 	}
+	// Validate response data before processing
+	if len(decoded.Data) == 0 {
+		return nil, fmt.Errorf("embedding API returned no data for %d inputs", len(texts))
+	}
+	for i, item := range decoded.Data {
+		if item.Embedding == nil || len(item.Embedding) == 0 {
+			return nil, fmt.Errorf("embedding API returned empty embedding at index %d (vendor may have filtered the input)", i)
+		}
+	}
 	return api.PlaceEmbeddings(len(texts), len(decoded.Data), func(i int) (int, []float32) {
 		if decoded.Data[i].Index == nil {
 			return i, decoded.Data[i].Embedding

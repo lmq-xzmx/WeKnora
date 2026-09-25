@@ -98,8 +98,8 @@ func (c *Client) Embed(
 	if decoded.Error != nil && decoded.Error.Message != "" {
 		return nil, fmt.Errorf("ark embedding error %s: %s", decoded.Error.Code, decoded.Error.Message)
 	}
-	if len(decoded.Data.Embedding) == 0 {
-		return nil, fmt.Errorf("ark embedding returned no vector")
+	if decoded.Data.Embedding == nil || len(decoded.Data.Embedding) == 0 {
+		return nil, fmt.Errorf("ark embedding returned empty or null vector")
 	}
 	return [][]float32{decoded.Data.Embedding}, nil
 }

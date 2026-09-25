@@ -124,6 +124,12 @@ func (c *Client) Embed(
 		return nil, fmt.Errorf(
 			"gemini returned %d embeddings for %d inputs", len(decoded.Embeddings), len(texts))
 	}
+	// Validate each embedding is non-empty
+	for i, emb := range decoded.Embeddings {
+		if len(emb.Values) == 0 {
+			return nil, fmt.Errorf("gemini returned empty embedding at index %d", i)
+		}
+	}
 	return api.PlaceEmbeddings(len(texts), len(decoded.Embeddings), func(i int) (int, []float32) {
 		return i, decoded.Embeddings[i].Values
 	})

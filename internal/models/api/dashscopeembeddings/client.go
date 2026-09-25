@@ -87,6 +87,12 @@ func (c *Client) Embed(
 	if decoded.Code != "" {
 		return nil, fmt.Errorf("DashScope embedding error %s: %s", decoded.Code, decoded.Message)
 	}
+	// Validate each embedding is non-empty
+	for i, emb := range decoded.Output.Embeddings {
+		if len(emb.Embedding) == 0 {
+			return nil, fmt.Errorf("DashScope returned empty embedding at index %d", i)
+		}
+	}
 	return api.PlaceEmbeddings(len(texts), len(decoded.Output.Embeddings), func(i int) (int, []float32) {
 		return decoded.Output.Embeddings[i].Index, decoded.Output.Embeddings[i].Embedding
 	})

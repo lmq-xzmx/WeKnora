@@ -69,6 +69,17 @@ func (e *batchEmbedder) BatchEmbedWithPool(ctx context.Context, model Embedder, 
 				mu.Unlock()
 				return
 			}
+			// Check for empty embeddings (defensive check against malformed responses)
+			for i, vec := range embedding {
+				if len(vec) == 0 {
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = fmt.Errorf("embedding model returned empty embedding at index %d of %d", i, len(embedding))
+					}
+					mu.Unlock()
+					return
+				}
+			}
 			mu.Lock()
 			for i, text := range texts {
 				if text == nil {

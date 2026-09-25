@@ -82,7 +82,17 @@ func PlaceEmbeddings(want, got int, at func(i int) (int, []float32)) ([][]float3
 	}
 	for i, vector := range out {
 		if len(vector) == 0 {
-			return nil, fmt.Errorf("no embedding returned for input %d of %d", i, want)
+			// Collect all missing indices for a more informative error
+			var missing []int
+			for j, v := range out {
+				if len(v) == 0 {
+					missing = append(missing, j)
+				}
+			}
+			if len(missing) == 1 {
+				return nil, fmt.Errorf("no embedding returned for input %d of %d", i, want)
+			}
+			return nil, fmt.Errorf("no embedding returned for inputs %v of %d", missing, want)
 		}
 	}
 	return out, nil

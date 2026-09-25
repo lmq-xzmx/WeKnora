@@ -1,0 +1,28 @@
+builtin_models:
+  - id: builtin-bge-m3
+    type: Embedding
+    source: remote
+    is_default: true
+    name: bge-m3
+    parameters:
+      base_url: http://localhost:8082
+      api_key: ""
+      provider: generic
+      interface_type: openai
+      embedding_parameters:
+        dimension: 1024
+        truncate_prompt_tokens: 8192
+
+  - id: builtin-bge-large-zh
+    type: Embedding
+    source: remote
+    is_default: false
+    name: bge-large-zh-v1.5
+    parameters:
+      base_url: http://localhost:8083
+      api_key: ""
+      provider: generic
+      interface_type: openai
+      embedding_parameters:
+        dimension: 1024
+        truncate_prompt_tokens: 512
