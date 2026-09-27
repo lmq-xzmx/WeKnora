@@ -1,7 +1,7 @@
 # =========================
 # 构建阶段（轻量化：仅文档解析 + 图片提取，无 OCR/VLM）
 # =========================
-FROM python:3.10.18-bookworm AS builder
+FROM python:3.10-slim-bookworm AS builder
 
 ARG APT_MIRROR=""
 RUN if [ -n "$APT_MIRROR" ]; then \
@@ -12,7 +12,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 WORKDIR /app
 
 # 安装构建依赖
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     libjpeg-dev \
@@ -24,12 +24,11 @@ RUN apt-get update && apt-get install -y \
     antiword \
     curl \
     unzip \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/lists/*
 
 # 检查是否存在本地protoc安装包，如果存在则离线安装，否则在线安装
 ARG TARGETARCH
 COPY packages/ /app/packages/
-RUN ls -lah /app/packages/
 # 兼容 BuildKit 和传统构建：如果 TARGETARCH 为空，使用 uname 检测
 RUN if [ -z "$TARGETARCH" ]; then \
         case $(uname -m) in \
@@ -79,7 +78,7 @@ RUN chmod +x docreader/scripts/generate_proto.sh && \
 # =========================
 # 运行阶段（轻量化）
 # =========================
-FROM python:3.10.18-bookworm AS runner
+FROM python:3.10-slim-bookworm AS runner
 
 ARG APT_MIRROR=""
 RUN if [ -n "$APT_MIRROR" ]; then \
@@ -90,7 +89,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 WORKDIR /app
 
 # 安装运行时依赖（已移除 OCR/PaddleOCR 相关依赖）
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg62-turbo \
     wget \
     gnupg \
@@ -109,7 +108,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libreoffice \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/lists/*
 
 # 安装 grpc_health_probe
 ARG TARGETARCH
@@ -143,8 +142,7 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # 安装 Playwright 浏览器（网页解析）
-RUN python -m playwright install webkit
-RUN python -m playwright install-deps webkit
+RUN python -m playwright install --with-deps webkit
 
 COPY docreader/pyproject.toml docreader/uv.lock ./
 COPY --from=builder /app/docreader docreader
