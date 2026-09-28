@@ -71,6 +71,14 @@ async def proxy_embeddings(req: ProxyRequest) -> JSONResponse:
 async def health():
     return {"status": "ok"}
 
+@app.get("/v1/models")
+async def list_models():
+    return {"object": "list", "data": [{"id": "bge-m3", "object": "model", "owned_by": "local"}]}
+
+@app.post("/v1/embeddings")
+async def proxy_v1_embeddings(req: ProxyRequest):
+    return await proxy_embeddings(req)
+
 args = None
 
 if __name__ == "__main__":
