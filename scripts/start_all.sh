@@ -31,6 +31,7 @@ show_help() {
     echo "  -l, --list     列出所有正在运行的容器"
     echo "  -p, --pull     拉取最新的Docker镜像"
     echo "  --no-pull      启动时不拉取镜像（默认会拉取）"
+    echo "  --paddleocr-vl 启动 PaddleOCR-VL 自建服务（scripts/paddleocr_vl_server.py）"
     echo "  -v, --version  显示版本信息"
     exit 0
 }
@@ -70,6 +71,145 @@ export_frontend_build_args() {
     eval "$("$PROJECT_ROOT/scripts/get_version.sh" env)"
     export VITE_FRONTEND_COMMIT="${COMMIT_ID:-unknown}"
     log_info "VITE_FRONTEND_COMMIT=${VITE_FRONTEND_COMMIT}"
+}
+
+# PaddleOCR-VL 自建服务的默认端口（可被 .env 中 WEKNORA_PADDLEOCR_VL_PORT 覆盖）。
+PADDLEOCR_VL_DEFAULT_PORT=8085
+
+# PaddleOCR-VL 启动脚本路径（相对 SCRIPT_DIR）
+PADDLEOCR_VL_SCRIPT_NAME="paddleocr_vl_server.py"
+
+# 解析 PaddleOCR-VL 服务端口（从 .env 读 WEKNORA_PADDLEOCR_VL_PORT，回退默认值）
+get_paddleocr_vl_port() {
+    if [ -f "$PROJECT_ROOT/.env" ]; then
+        # shellcheck source=/dev/null
+        source "$PROJECT_ROOT/.env"
+    fi
+    PADDLEOCR_VL_PORT="${WEKNORA_PADDLEOCR_VL_PORT:-$PADDLEOCR_VL_DEFAULT_PORT}"
+}
+
+# 选择 Python 解释器（项目 venv > pyenv 3.12.10 > 系统 python3）
+pick_python_bin() {
+    if [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+        echo "$PROJECT_ROOT/.venv/bin/python"
+        return 0
+    fi
+    if [ -x "$HOME/.pyenv/versions/3.12.10/bin/python" ]; then
+        echo "$HOME/.pyenv/versions/3.12.10/bin/python"
+        return 0
+    fi
+    if command -v python3 &> /dev/null; then
+        command -v python3
+        return 0
+    fi
+    return 1
+}
+
+# 启动 PaddleOCR-VL 本地服务（WeKnora/scripts/paddleocr_vl_server.py）
+start_paddleocr_vl() {
+    local script_path="$SCRIPT_DIR/$PADDLEOCR_VL_SCRIPT_NAME"
+    if [ ! -f "$script_path" ]; then
+        log_warning "未找到 $script_path，跳过 PaddleOCR-VL 自建服务启动"
+        return 1
+    fi
+
+    get_paddleocr_vl_port
+    log_info "PaddleOCR-VL 脚本: $script_path"
+    log_info "PaddleOCR-VL 端口: $PADDLEOCR_VL_PORT"
+
+    # 健康检查：已在跑就直接返回
+    if curl -sf "http://127.0.0.1:$PADDLEOCR_VL_PORT/health" &> /dev/null; then
+        log_success "PaddleOCR-VL 已在端口 $PADDLEOCR_VL_PORT 运行"
+        return 0
+    fi
+
+    local python_bin
+    if ! python_bin="$(pick_python_bin)"; then
+        log_error "未找到可用的 Python 解释器，无法启动 PaddleOCR-VL"
+        return 1
+    fi
+    log_info "使用 Python: $python_bin"
+
+    mkdir -p "$PROJECT_ROOT/.local-data"
+    local logfile="$PROJECT_ROOT/.local-data/paddleocr_vl.log"
+    local pidfile="$PROJECT_ROOT/.local-data/paddleocr_vl.pid"
+
+    log_info "后台启动 PaddleOCR-VL ..."
+    nohup "$python_bin" "$script_path" > "$logfile" 2>&1 &
+    local pid=$!
+    echo "$pid" > "$pidfile"
+    log_info "PaddleOCR-VL PID: $pid，日志: $logfile"
+
+    # 等健康检查通过（首次加载模型可能耗时较长，给到 90s）
+    local max_retries=90
+    local count=0
+    while [ $count -lt $max_retries ]; do
+        if curl -sf "http://127.0.0.1:$PADDLEOCR_VL_PORT/health" &> /dev/null; then
+            log_success "PaddleOCR-VL 启动成功，监听 127.0.0.1:$PADDLEOCR_VL_PORT"
+            return 0
+        fi
+        if ! kill -0 "$pid" 2>/dev/null; then
+            log_error "PaddleOCR-VL 进程已退出，请查看日志: $logfile"
+            rm -f "$pidfile"
+            return 1
+        fi
+        echo -ne "等待 PaddleOCR-VL 启动... ($count/$max_retries)\r"
+        sleep 1
+        count=$((count + 1))
+    done
+    echo ""
+    log_error "PaddleOCR-VL 健康检查超时（${max_retries}s），日志: $logfile"
+    return 1
+}
+
+# 停止 PaddleOCR-VL 本地服务
+stop_paddleocr_vl() {
+    local pidfile="$PROJECT_ROOT/.local-data/paddleocr_vl.pid"
+
+    if [ -f "$pidfile" ]; then
+        local pid
+        pid="$(cat "$pidfile" 2>/dev/null)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            log_info "停止 PaddleOCR-VL (PID $pid) ..."
+            kill "$pid" 2>/dev/null || true
+            sleep 1
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+            log_success "PaddleOCR-VL 已停止"
+        else
+            log_info "PaddleOCR-VL PID 文件存在但进程不在运行"
+        fi
+        rm -f "$pidfile"
+        return 0
+    fi
+
+    # 兜底：按脚本名清理（处理 PID 文件丢失场景）
+    if pgrep -f "$PADDLEOCR_VL_SCRIPT_NAME" > /dev/null; then
+        log_info "按脚本名清理 PaddleOCR-VL 进程 ..."
+        pkill -f "$PADDLEOCR_VL_SCRIPT_NAME" || true
+        log_success "PaddleOCR-VL 已停止"
+    else
+        log_info "PaddleOCR-VL 未运行"
+    fi
+    return 0
+}
+
+# 检查 PaddleOCR-VL 健康状态（环境检查场景）
+check_paddleocr_vl() {
+    local script_path="$SCRIPT_DIR/$PADDLEOCR_VL_SCRIPT_NAME"
+    if [ ! -f "$script_path" ]; then
+        log_warning "PaddleOCR-VL 脚本未就位: $script_path"
+        return 1
+    fi
+    get_paddleocr_vl_port
+    if curl -sf "http://127.0.0.1:$PADDLEOCR_VL_PORT/health" &> /dev/null; then
+        log_success "PaddleOCR-VL 监听正常: 127.0.0.1:$PADDLEOCR_VL_PORT"
+        return 0
+    fi
+    log_warning "PaddleOCR-VL 未运行（端口 $PADDLEOCR_VL_PORT 无响应）"
+    log_info "可用以下命令启动: $0 --paddleocr-vl"
+    return 1
 }
 
 # 选择可用的 Docker Compose 命令（优先 docker compose，其次 docker-compose）
@@ -593,6 +733,10 @@ check_environment() {
         log_info "可通过以下命令拉取: $0 -p 或 docker pull $sandbox_image"
     fi
 
+    # 检查 PaddleOCR-VL 自建服务（不强制启动，只探测）
+    log_info "检查 PaddleOCR-VL 自建服务..."
+    check_paddleocr_vl || true
+
     # 检查磁盘空间
     log_info "检查磁盘空间..."
     df -h | grep -E "(Filesystem|/$)"
@@ -636,6 +780,7 @@ LIST_CONTAINERS=false
 RESTART_CONTAINER=false
 PULL_IMAGES=false
 NO_PULL=false
+START_PADDLEOCR_VL=false
 CONTAINER_NAME=""
 
 # 没有参数时默认启动所有服务
@@ -666,6 +811,8 @@ while [ "$1" != "" ]; do
         --no-pull )         NO_PULL=true
                             START_OLLAMA=true
                             START_DOCKER=true
+                            ;;
+        --paddleocr-vl )    START_PADDLEOCR_VL=true
                             ;;
         -r | --restart )    RESTART_CONTAINER=true
                             CONTAINER_NAME="$2"
@@ -712,7 +859,10 @@ if [ "$STOP_SERVICES" = true ]; then
     
     stop_docker
     DOCKER_RESULT=$?
-    
+
+    stop_paddleocr_vl
+    PADDLEOCR_VL_RESULT=$?
+
     # 显示总结
     echo ""
     log_info "=== 停止结果 ==="
@@ -727,20 +877,34 @@ if [ "$STOP_SERVICES" = true ]; then
     else
         log_error "✗ Docker容器停止失败"
     fi
-    
+
+    if [ "$START_PADDLEOCR_VL" = true ] || [ -f "$PROJECT_ROOT/.local-data/paddleocr_vl.pid" ]; then
+        if [ $PADDLEOCR_VL_RESULT -eq 0 ]; then
+            log_success "✓ PaddleOCR-VL 服务已停止"
+        else
+            log_error "✗ PaddleOCR-VL 服务停止失败"
+        fi
+    fi
+
     log_success "服务停止完成。"
 else
     # 启动服务
     OLLAMA_RESULT=1
     DOCKER_RESULT=1
+    PADDLEOCR_VL_RESULT=1
     if [ "$START_OLLAMA" = true ]; then
         start_ollama
         OLLAMA_RESULT=$?
     fi
-    
+
     if [ "$START_DOCKER" = true ]; then
         start_docker
         DOCKER_RESULT=$?
+    fi
+
+    if [ "$START_PADDLEOCR_VL" = true ]; then
+        start_paddleocr_vl
+        PADDLEOCR_VL_RESULT=$?
     fi
     
     # 显示总结
@@ -759,6 +923,14 @@ else
             log_success "✓ Docker容器已启动"
         else
             log_error "✗ Docker容器启动失败"
+        fi
+    fi
+
+    if [ "$START_PADDLEOCR_VL" = true ]; then
+        if [ $PADDLEOCR_VL_RESULT -eq 0 ]; then
+            log_success "✓ PaddleOCR-VL 服务已启动"
+        else
+            log_error "✗ PaddleOCR-VL 服务启动失败"
         fi
     fi
     
