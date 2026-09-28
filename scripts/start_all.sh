@@ -32,6 +32,7 @@ show_help() {
     echo "  -p, --pull     拉取最新的Docker镜像"
     echo "  --no-pull      启动时不拉取镜像（默认会拉取）"
     echo "  --paddleocr-vl 启动 PaddleOCR-VL 自建服务（scripts/paddleocr_vl_server.py）"
+    echo "  --bge-proxy    启动 BGE→OpenAI 格式代理（scripts/bge_proxy.py）"
     echo "  -v, --version  显示版本信息"
     exit 0
 }
@@ -209,6 +210,115 @@ check_paddleocr_vl() {
     fi
     log_warning "PaddleOCR-VL 未运行（端口 $PADDLEOCR_VL_PORT 无响应）"
     log_info "可用以下命令启动: $0 --paddleocr-vl"
+    return 1
+}
+
+# --------------------------------------------------------------------------
+# BGE→OpenAI 格式代理（解决自建 BGE 服务器响应格式与 WeKnora generic 接口格式不兼容的问题）
+# --------------------------------------------------------------------------
+BGE_PROXY_DEFAULT_PORT=3042
+BGE_PROXY_DEFAULT_BGE_URL="http://36.140.179.34:3041"
+BGE_PROXY_SCRIPT_NAME="bge_proxy.py"
+
+get_bge_proxy_port() {
+    if [ -f "$PROJECT_ROOT/.env" ]; then
+        # shellcheck source=/dev/null
+        source "$PROJECT_ROOT/.env"
+    fi
+    BGE_PROXY_PORT="${BGE_PROXY_PORT:-${WEKNORA_BGE_PROXY_PORT:-$BGE_PROXY_DEFAULT_PORT}}"
+    BGE_PROXY_BGE_URL="${BGE_PROXY_BGE_URL:-${WEKNORA_BGE_PROXY_BGE_URL:-$BGE_PROXY_DEFAULT_BGE_URL}}"
+}
+
+start_bge_proxy() {
+    local script_path="$SCRIPT_DIR/$BGE_PROXY_SCRIPT_NAME"
+    if [ ! -f "$script_path" ]; then
+        log_warning "未找到 $script_path，跳过 BGE 代理启动"
+        return 1
+    fi
+    get_bge_proxy_port
+    log_info "BGE 代理脚本: $script_path"
+    log_info "BGE 后端地址: $BGE_PROXY_BGE_URL"
+    log_info "BGE 代理端口: $BGE_PROXY_PORT"
+
+    if curl -sf "http://127.0.0.1:$BGE_PROXY_PORT/health" &> /dev/null; then
+        log_success "BGE 代理已在端口 $BGE_PROXY_PORT 运行"
+        return 0
+    fi
+
+    local python_bin
+    if ! python_bin="$(pick_python_bin)"; then
+        log_error "未找到可用的 Python 解释器，无法启动 BGE 代理"
+        return 1
+    fi
+
+    mkdir -p "$PROJECT_ROOT/.local-data"
+    local logfile="$PROJECT_ROOT/.local-data/bge_proxy.log"
+    local pidfile="$PROJECT_ROOT/.local-data/bge_proxy.pid"
+
+    log_info "后台启动 BGE 代理 ..."
+    nohup "$python_bin" "$script_path" \
+        --bge-url "$BGE_PROXY_BGE_URL" \
+        --port "$BGE_PROXY_PORT" \
+        --host 127.0.0.1 \
+        > "$logfile" 2>&1 &
+    local pid=$!
+    echo "$pid" > "$pidfile"
+    log_info "BGE 代理 PID: $pid，日志: $logfile"
+
+    local max_retries=20
+    local count=0
+    while [ $count -lt $max_retries ]; do
+        if curl -sf "http://127.0.0.1:$BGE_PROXY_PORT/health" &> /dev/null; then
+            log_success "BGE 代理启动成功，监听 127.0.0.1:$BGE_PROXY_PORT"
+            log_info "指向 BGE 后端: $BGE_PROXY_BGE_URL"
+            return 0
+        fi
+        if ! kill -0 "$pid" 2>/dev/null; then
+            log_error "BGE 代理进程已退出，日志: $logfile"
+            rm -f "$pidfile"
+            return 1
+        fi
+        echo -ne "等待 BGE 代理启动... ($count/$max_retries)\r"
+        sleep 1
+        count=$((count + 1))
+    done
+    echo ""
+    log_error "BGE 代理健康检查超时（${max_retries}s），日志: $logfile"
+    return 1
+}
+
+stop_bge_proxy() {
+    local pidfile="$PROJECT_ROOT/.local-data/bge_proxy.pid"
+    if [ -f "$pidfile" ]; then
+        local pid; pid="$(cat "$pidfile" 2>/dev/null)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            log_info "停止 BGE 代理 (PID $pid) ..."
+            kill "$pid" 2>/dev/null || true
+            sleep 1
+            kill -9 "$pid" 2>/dev/null || true
+            log_success "BGE 代理已停止"
+        fi
+        rm -f "$pidfile"
+        return 0
+    fi
+    if pgrep -f "$BGE_PROXY_SCRIPT_NAME" > /dev/null; then
+        log_info "按脚本名清理 BGE 代理进程 ..."
+        pkill -f "$BGE_PROXY_SCRIPT_NAME" || true
+        log_success "BGE 代理已停止"
+    else
+        log_info "BGE 代理未运行"
+    fi
+    return 0
+}
+
+check_bge_proxy() {
+    get_bge_proxy_port
+    if curl -sf "http://127.0.0.1:$BGE_PROXY_PORT/health" &> /dev/null; then
+        log_success "BGE 代理监听正常: 127.0.0.1:$BGE_PROXY_PORT → $BGE_PROXY_BGE_URL"
+        return 0
+    fi
+    log_warning "BGE 代理未运行（端口 $BGE_PROXY_PORT 无响应）"
+    log_info "可用以下命令启动: $0 --bge-proxy"
     return 1
 }
 
@@ -737,6 +847,10 @@ check_environment() {
     log_info "检查 PaddleOCR-VL 自建服务..."
     check_paddleocr_vl || true
 
+    # 检查 BGE 代理
+    log_info "检查 BGE 代理..."
+    check_bge_proxy || true
+
     # 检查磁盘空间
     log_info "检查磁盘空间..."
     df -h | grep -E "(Filesystem|/$)"
@@ -781,6 +895,7 @@ RESTART_CONTAINER=false
 PULL_IMAGES=false
 NO_PULL=false
 START_PADDLEOCR_VL=false
+START_BGE_PROXY=false
 CONTAINER_NAME=""
 
 # 没有参数时默认启动所有服务
@@ -813,6 +928,8 @@ while [ "$1" != "" ]; do
                             START_DOCKER=true
                             ;;
         --paddleocr-vl )    START_PADDLEOCR_VL=true
+                            ;;
+        --bge-proxy )      START_BGE_PROXY=true
                             ;;
         -r | --restart )    RESTART_CONTAINER=true
                             CONTAINER_NAME="$2"
@@ -863,6 +980,8 @@ if [ "$STOP_SERVICES" = true ]; then
     stop_paddleocr_vl
     PADDLEOCR_VL_RESULT=$?
 
+    stop_bge_proxy
+
     # 显示总结
     echo ""
     log_info "=== 停止结果 ==="
@@ -886,6 +1005,14 @@ if [ "$STOP_SERVICES" = true ]; then
         fi
     fi
 
+    if [ "$START_BGE_PROXY" = true ] || [ -f "$PROJECT_ROOT/.local-data/bge_proxy.pid" ]; then
+        if stop_bge_proxy; then
+            log_success "✓ BGE 代理已停止"
+        else
+            log_error "✗ BGE 代理停止失败"
+        fi
+    fi
+
     log_success "服务停止完成。"
 else
     # 启动服务
@@ -905,6 +1032,11 @@ else
     if [ "$START_PADDLEOCR_VL" = true ]; then
         start_paddleocr_vl
         PADDLEOCR_VL_RESULT=$?
+    fi
+
+    if [ "$START_BGE_PROXY" = true ]; then
+        start_bge_proxy
+        BGE_PROXY_RESULT=$?
     fi
     
     # 显示总结
@@ -931,6 +1063,14 @@ else
             log_success "✓ PaddleOCR-VL 服务已启动"
         else
             log_error "✗ PaddleOCR-VL 服务启动失败"
+        fi
+    fi
+
+    if [ "$START_BGE_PROXY" = true ]; then
+        if [ "${BGE_PROXY_RESULT:-1}" -eq 0 ]; then
+            log_success "✓ BGE 代理已启动"
+        else
+            log_error "✗ BGE 代理启动失败"
         fi
     fi
     

@@ -5,7 +5,7 @@ builtin_models:
     is_default: true
     name: bge-m3
     parameters:
-      base_url: http://localhost:8082
+      base_url: http://localhost:3042
       api_key: ""
       provider: generic
       interface_type: openai
@@ -19,7 +19,7 @@ builtin_models:
     is_default: false
     name: bge-large-zh-v1.5
     parameters:
-      base_url: http://localhost:8083
+      base_url: http://36.140.179.34:3040
       api_key: ""
       provider: generic
       interface_type: openai
