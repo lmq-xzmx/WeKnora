@@ -1073,7 +1073,18 @@ export default {
     processConfig: {
       title: '今回の解析設定',
       kbDefault: 'ナレッジベースのデフォルト設定を使用',
-      graph: 'ナレッジグラフ'
+      graph: 'ナレッジグラフ',
+      on: 'オン',
+      off: 'オフ',
+      chunkSize: 'チャンク {n}',
+      parentChildOn: '親子チャンク',
+      parentChildOff: '親子チャンクなし',
+      chunking: 'チャンキング',
+      parser: 'パーサー',
+      multimodal: 'マルチモーダル',
+      asr: '音声認識',
+      question: '質問',
+      questionOn: '{n}個の質問を生成'
     },
     attempt: '{n}回目の試行',
     retry: '再解析',

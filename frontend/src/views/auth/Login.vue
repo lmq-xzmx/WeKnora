@@ -97,7 +97,7 @@
 
     <!-- Logo - Top Left -->
     <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" :title="$t('common.github')">
-      <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
+      <span class="logo-emoji" aria-label="WeKnora">🔥</span>
     </a>
 
     <!-- Header Links - Top Right -->
@@ -1203,6 +1203,12 @@ onMounted(async () => {
   .logo-image {
     width: 120px;
     height: auto;
+  }
+
+  .logo-emoji {
+    font-size: 32px;
+    line-height: 1;
+    display: inline-block;
   }
 }
 

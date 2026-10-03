@@ -4142,7 +4142,8 @@ const getTextareaElement = (): HTMLTextAreaElement | null => {
 };
 
 // 计算光标位置
-const calculateCursorPosition = (textarea: HTMLTextAreaElement) => {
+const calculateCursorPosition = (textarea: HTMLTextAreaElement | null) => {
+  if (!textarea || !(textarea instanceof Element)) return { top: 0, left: 0 };
   const cursorPos = textarea.selectionStart;
   const textBeforeCursor = formData.value.config.system_prompt.substring(0, cursorPos);
 
@@ -4299,7 +4300,8 @@ const getContextTemplateTextareaElement = (): HTMLTextAreaElement | null => {
 };
 
 // 计算上下文模板光标位置
-const calculateContextCursorPosition = (textarea: HTMLTextAreaElement) => {
+const calculateContextCursorPosition = (textarea: HTMLTextAreaElement | null) => {
+  if (!textarea || !(textarea instanceof Element)) return { top: 0, left: 0 };
   const cursorPos = textarea.selectionStart;
   const textBeforeCursor = formData.value.config.context_template.substring(0, cursorPos);
 
@@ -4480,7 +4482,8 @@ const getGenericTextareaElement = (type: GenericPlaceholderType): HTMLTextAreaEl
 };
 
 // 通用计算光标位置
-const calculateGenericCursorPosition = (textarea: HTMLTextAreaElement, fieldValue: string) => {
+const calculateGenericCursorPosition = (textarea: HTMLTextAreaElement | null, fieldValue: string) => {
+  if (!textarea || !(textarea instanceof Element)) return { top: 0, left: 0 };
   const cursorPos = textarea.selectionStart;
   const textBeforeCursor = fieldValue.substring(0, cursorPos);
   const lines = textBeforeCursor.split('\n');

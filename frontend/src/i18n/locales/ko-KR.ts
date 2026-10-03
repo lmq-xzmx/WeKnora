@@ -6863,7 +6863,18 @@ export default {
     processConfig: {
       title: '이번 파싱 설정',
       kbDefault: '지식 베이스 기본 설정 사용',
-      graph: '지식 그래프'
+      graph: '지식 그래프',
+      on: '켜기',
+      off: '끄기',
+      chunkSize: '청크 {n}',
+      parentChildOn: '부모-자식 청크',
+      parentChildOff: '부모-자식 없음',
+      chunking: '청킹',
+      parser: '파서',
+      multimodal: '멀티모달',
+      asr: '음성 인식',
+      question: '질문',
+      questionOn: '{n}개 질문 생성'
     }
   },
   uploadConfirm: {

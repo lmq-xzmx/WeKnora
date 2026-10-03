@@ -6863,7 +6863,18 @@ export default {
     processConfig: {
       title: 'Конфигурация обработки',
       kbDefault: 'Используются настройки базы знаний по умолчанию',
-      graph: 'Граф знаний'
+      graph: 'Граф знаний',
+      on: 'Вкл',
+      off: 'Выкл',
+      chunkSize: 'Чанк {n}',
+      parentChildOn: 'Родитель-потомок',
+      parentChildOff: 'Без родителя-потомка',
+      chunking: 'Чанкинг',
+      parser: 'Парсер',
+      multimodal: 'Мультимодал',
+      asr: 'Распознавание речи',
+      question: 'Вопросы',
+      questionOn: 'Создать {n} вопросов'
     }
   },
   uploadConfirm: {

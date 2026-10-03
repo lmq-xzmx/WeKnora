@@ -3,7 +3,7 @@
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
         <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
             <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
-                <img class="logo" src="@/assets/img/weknora.png" alt="">
+                <span class="logo-emoji" aria-label="WeKnora">🔥</span>
                 <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
             </div>
             <div class="logo_actions">
@@ -1354,6 +1354,13 @@ const resizeSidebar = (delta: number, keyboard: boolean) => {
         .logo {
             width: 128px;
             height: auto;
+        }
+
+        .logo-emoji {
+            font-size: 28px;
+            line-height: 1;
+            display: inline-block;
+            margin-right: 4px;
         }
 
         .lite-badge {

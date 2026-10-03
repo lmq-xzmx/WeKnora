@@ -1073,7 +1073,18 @@ export default {
     processConfig: {
       title: 'Parse config for this run',
       kbDefault: 'Using knowledge base defaults',
-      graph: 'Knowledge graph'
+      graph: 'Knowledge graph',
+      on: 'On',
+      off: 'Off',
+      chunkSize: 'Chunk {n}',
+      parentChildOn: 'Parent-child',
+      parentChildOff: 'No parent-child',
+      chunking: 'Chunking',
+      parser: 'Parser',
+      multimodal: 'Multimodal',
+      asr: 'ASR',
+      question: 'Q&A',
+      questionOn: 'Generate {n} questions'
     },
     attempt: 'Attempt {n}',
     retry: 'Retry parsing',

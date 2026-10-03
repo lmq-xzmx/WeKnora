@@ -10,7 +10,7 @@ builtin_models:
       provider: generic
       interface_type: openai
       embedding_parameters:
-        dimension: 1024
+        dimension: 768
         truncate_prompt_tokens: 8192
 
   - id: builtin-bge-large-zh
@@ -19,10 +19,10 @@ builtin_models:
     is_default: false
     name: bge-large-zh-v1.5
     parameters:
-      base_url: http://36.140.179.34:3040
+      base_url: http://localhost:3042
       api_key: ""
       provider: generic
       interface_type: openai
       embedding_parameters:
-        dimension: 1024
+        dimension: 768
         truncate_prompt_tokens: 512

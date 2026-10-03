@@ -6865,7 +6865,18 @@ export default {
     processConfig: {
       title: '本次解析配置',
       kbDefault: '使用知识库默认配置',
-      graph: '知识图谱'
+      graph: '知识图谱',
+      on: '开启',
+      off: '关闭',
+      chunkSize: '分块 {n}',
+      parentChildOn: '父子分块',
+      parentChildOff: '不分块',
+      chunking: '分块',
+      parser: '解析器',
+      multimodal: '多模态',
+      asr: '语音识别',
+      question: '问答',
+      questionOn: '生成 {n} 个问题'
     }
   },
   uploadConfirm: {
