@@ -6,9 +6,11 @@
 # WEBSITE_NGINX_PORT is written into default.conf at build time. The intranet
 # platform starts `nginx; sleep infinity` and does not run docker-entrypoint.sh.
 FROM node:24-bookworm-slim AS builder
+# Single apt-get invocation; git is the only build-time tool we need beyond
+# what node:24-bookworm-slim already ships.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/lists/*
 WORKDIR /build
 ENV NEXT_TELEMETRY_DISABLED=1
 
