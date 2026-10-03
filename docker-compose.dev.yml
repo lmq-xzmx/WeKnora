@@ -52,7 +52,7 @@ services:
       - full
 
   searxng:
-    image: searxng/searxng:latest
+    image: searxng/searxng:2025.06.13-1e0b49f6
     container_name: WeKnora-searxng-dev
     # Local dev: bind to loopback by default; the host-side WeKnora process
     # reaches it at http://127.0.0.1:${SEARXNG_PORT}.
@@ -82,7 +82,7 @@ services:
       - full
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: WeKnora-minio-dev
     ports:
       - "${MINIO_PORT:-9000}:9000"
@@ -204,7 +204,7 @@ services:
       - full
 
   neo4j:
-    image: neo4j:latest
+    image: neo4j:2025.10.1
     container_name: WeKnora-neo4j-dev
     volumes:
       - neo4j-data-dev:/data
@@ -355,7 +355,7 @@ services:
     restart: unless-stopped
 
   dex:
-    image: dexidp/dex:latest
+    image: dexidp/dex:v2.43.1
     container_name: WeKnora-dex-dev
     ports:
       - "5556:5556"
@@ -438,7 +438,7 @@ services:
       - full
 
   langfuse-minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: WeKnora-langfuse-minio-dev
     restart: unless-stopped
     entrypoint: sh
