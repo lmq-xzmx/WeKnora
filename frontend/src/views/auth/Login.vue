@@ -199,7 +199,8 @@
           </div>
 
           <div class="form-content">
-            <t-form ref="formRef" :data="formData" :rules="formRules" @submit="handleLogin" layout="vertical"
+            <!-- 本地登录表单 (OIDC 启用时隐藏) -->
+            <t-form v-if="!oidcEnabled" ref="formRef" :data="formData" :rules="formRules" @submit="handleLogin" layout="vertical"
               label-align="top">
               <t-form-item :label="$t('auth.email')" name="email">
                 <t-input v-model="formData.email" :placeholder="$t('auth.emailPlaceholder')" type="text"
@@ -214,30 +215,26 @@
               <t-button type="submit" theme="primary" size="large" block :loading="loading" class="submit-button">
                 {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
               </t-button>
+            </t-form>
 
-              <div class="register-cta" v-if="registrationEnabled || oidcEnabled">
+            <!-- OIDC 登录按钮 (OIDC 启用时显示) -->
+            <div v-if="oidcEnabled" class="oidc-divider">
+              <span>{{ $t('auth.orContinueWith') }}</span>
+            </div>
+            <t-button v-if="oidcEnabled" theme="primary" size="large" block :loading="oidcLoading" :disabled="loading"
+              class="oidc-button" @click="handleOIDCLogin">
+              {{ oidcLoading ? $t('auth.redirectingToOIDC') : oidcLoginText }}
+            </t-button>
+
+            <div class="register-cta" v-if="!oidcEnabled && registrationEnabled">
                 <div class="register-cta__divider">
                   <span>{{ $t('auth.firstTime') }}</span>
                 </div>
-                <t-button v-if="oidcEnabled" theme="default" variant="outline" size="large" block class="register-cta__button"
-                  :disabled="loading" @click="handleOIDCLogin">
-                  {{ $t('auth.createAccount') }}
-                </t-button>
-                <t-button v-else theme="default" variant="outline" size="large" block class="register-cta__button"
+                <t-button theme="default" variant="outline" size="large" block class="register-cta__button"
                   :disabled="loading" @click="toggleMode">
                   {{ $t('auth.createAccount') }}
                 </t-button>
               </div>
-
-              <div v-if="oidcEnabled" class="oidc-divider">
-                <span>{{ $t('auth.orContinueWith') }}</span>
-              </div>
-
-              <t-button v-if="oidcEnabled" theme="default" size="large" block :loading="oidcLoading" :disabled="loading"
-                class="oidc-button" @click="handleOIDCLogin">
-                {{ oidcLoading ? $t('auth.redirectingToOIDC') : oidcLoginText }}
-              </t-button>
-            </t-form>
 
             <!-- Features list -->
             <div class="login-features">
