@@ -19,10 +19,10 @@ services:
       - MAX_SKILL_BUNDLE_SIZE_MB=${MAX_SKILL_BUNDLE_SIZE_MB:-256}
       - DEFAULT_LOCALE=${DEFAULT_LOCALE:-}
       - APP_HOST=${APP_HOST:-app}
-      # APP_BACKEND_PORT: the port NGINX proxies to (default 8080).
+      # APP_BACKEND_PORT: the port NGINX proxies to (default 5016).
       # For local deployment this is the App container's listening port, independent of host-mapped APP_PORT.
       # For remote deployment, set this to the remote App's service port.
-      - APP_PORT=${APP_BACKEND_PORT:-8080}
+      - APP_PORT=${APP_BACKEND_PORT:-5016}
       - APP_SCHEME=${APP_SCHEME:-http}
     # NOTE: If using a remote App backend, comment out or remove the depends_on
     # block below and set APP_HOST/APP_BACKEND_PORT/APP_SCHEME in your .env file.
@@ -30,7 +30,7 @@ services:
       app:
         condition: service_healthy
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
 
   app:
@@ -43,7 +43,7 @@ services:
         - WITH_ANYDOC=${WITH_ANYDOC:-1}
     container_name: WeKnora-app
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_PORT:-5016}:5016"
     volumes:
       - data-files:/data/files
       - docreader-tmp:/tmp/docreader:ro
@@ -55,12 +55,12 @@ services:
       # Optional: declarative built-in models. Copy config/builtin_models.yaml.example
       # to config/builtin_models.yaml, edit it for your deployment, then
       # uncomment the line below. See website-docs/03-features/06-models.md.
-      # - ./config/builtin_models.yaml:/app/config/builtin_models.yaml:ro
+      - ./config/builtin_models.yaml:/app/config/builtin_models.yaml:ro
       # Optional: model catalog overlay (extra vendors / model overrides).
       # Copy config/models.json.example to config/models.json, then
       # - ./config/models.json:/app/config/models.json:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5016/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -297,7 +297,7 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
       # 数据库中 API Key 等敏感字段落盘加密的 AES-256 主密钥（必须为 32 字节）。
       # 加密范围：tenants.api_key、模型 API key、向量库凭证、web search provider key、
-      # WeKnoraCloud.AppSecret 等。缺失或长度不对时，已加密字段无法解密（UI 显示为空，
+      # 小炬人Cloud.AppSecret 等。缺失或长度不对时，已加密字段无法解密（UI 显示为空，
       # 需重新填写）。生产环境必须显式设置且妥善保管，丢失则所有加密数据不可恢复。
       # （TENANT_AES_KEY / CRYPTO_MASTER_KEY / CRYPTO_SALT 已废弃：v0.4.0 起加密统一
       #   改用 SYSTEM_AES_KEY，Go 主应用不再读取这三个变量。）
@@ -385,7 +385,7 @@ services:
       docreader:
         condition: service_healthy
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -413,7 +413,7 @@ services:
         - APT_MIRROR=${APT_MIRROR:-}
     container_name: WeKnora-docreader
     # docreader gRPC ships without auth/TLS and is only consumed by the app
-    # container over the WeKnora-network (DOCREADER_ADDR defaults to
+    # container over the weknora-network (DOCREADER_ADDR defaults to
     # docreader:50051), so we don't publish 50051 to the host. `expose` keeps
     # the port reachable inside the compose network for documentation only.
     # If you need to call docreader from outside the host (e.g. for debugging),
@@ -504,7 +504,7 @@ services:
       retries: 3
       start_period: 60s
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -524,7 +524,7 @@ services:
     environment:
       - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---no-ocr}
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
 
   # 修改的PostgreSQL配置
@@ -538,7 +538,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
-      - WeKnora-network
+      - weknora-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s # 增加时间间隔
@@ -555,7 +555,7 @@ services:
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     restart: always
     networks:
-      - WeKnora-network
+      - weknora-network
 
   # One-shot init: copy the read-only template settings.yml into a named volume
   # before searxng starts. Necessary because the searxng entrypoint sed-replaces
@@ -571,7 +571,7 @@ services:
       - searxng_config:/etc/searxng
     restart: "no"
     networks:
-      - WeKnora-network
+      - weknora-network
     profiles:
       - searxng
       - full
@@ -604,13 +604,13 @@ services:
       searxng-init:
         condition: service_completed_successfully
     networks:
-      - WeKnora-network
+      - weknora-network
     profiles:
       - searxng
       - full
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: WeKnora-minio
     ports:
       - "${MINIO_PORT:-9000}:9000"
@@ -627,7 +627,7 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - WeKnora-network
+      - weknora-network
     profiles:
       - minio
       - full
@@ -648,7 +648,7 @@ services:
       - "7687:7687"
     restart: always
     networks:
-      - WeKnora-network
+      - weknora-network
     profiles:
       - neo4j
       - full
@@ -662,7 +662,7 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
     profiles:
       - qdrant
@@ -691,7 +691,7 @@ services:
     volumes:
       - milvus_data:/var/lib/milvus
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
     profiles:
       - milvus
@@ -714,7 +714,7 @@ services:
     volumes:
       - weaviate_data:/var/lib/weaviate
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
     profiles:
       - weaviate
@@ -726,7 +726,7 @@ services:
   # Stream Load partial_columns）。本 compose 使用 4.1 官方稳定 tag。
   #
   # 端口说明：
-  #   - 9030 (FE MySQL)：WeKnora 主链路读写、SQL 查询都走此端口。
+  #   - 9030 (FE MySQL)：小炬人 主链路读写、SQL 查询都走此端口。
   #   - 8030 (FE HTTP)：Stream Load partial update 入口。
   #   - 8040 (BE)     ：BE 心跳与数据传输；FE 会把 stream load 重定向到 BE。
   #
@@ -749,7 +749,7 @@ services:
       - doris_fe_meta:/opt/apache-doris/fe/doris-meta
       - doris_fe_log:/opt/apache-doris/fe/log
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
     profiles:
       - doris
@@ -769,7 +769,7 @@ services:
       - doris_be_storage:/opt/apache-doris/be/storage
       - doris_be_log:/opt/apache-doris/be/log
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
     profiles:
       - doris
@@ -789,9 +789,9 @@ services:
   # ---------------------------------------------------------------------------
   # Langfuse 自建可观测栈 (opt-in via `--profile langfuse`)
   #
-  # 为了最小化资源占用，Langfuse 会复用 WeKnora 已有的 postgres 和 redis：
+  # 为了最小化资源占用，Langfuse 会复用 小炬人 已有的 postgres 和 redis：
   #   - postgres：在 WeKnora-postgres 中创建独立的 "langfuse" 数据库
-  #   - redis  ：复用 WeKnora-redis 的 DB 1（WeKnora 自己用 DB 0）
+  #   - redis  ：复用 WeKnora-redis 的 DB 1（小炬人 自己用 DB 0）
   # 需要新增的只有 Langfuse 应用自身 + ClickHouse（OLAP）+ 专用 MinIO（事件/媒体 S3）。
   #
   # 启用方式：
@@ -833,7 +833,7 @@ services:
         fi
         echo "[langfuse-db-init] done."
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: "no"
     profiles:
       - langfuse
@@ -858,13 +858,13 @@ services:
       retries: 10
       start_period: 10s
     networks:
-      - WeKnora-network
+      - weknora-network
     profiles:
       - langfuse
       - full
 
   langfuse-minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: WeKnora-langfuse-minio
     restart: unless-stopped
     entrypoint: sh
@@ -886,7 +886,7 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - WeKnora-network
+      - weknora-network
     profiles:
       - langfuse
       - full
@@ -896,7 +896,7 @@ services:
     container_name: WeKnora-langfuse-worker
     restart: unless-stopped
     depends_on: &langfuse-depends-on
-      # 复用 WeKnora 已有的 postgres/redis，需要先完成 langfuse 数据库的创建
+      # 复用 小炬人 已有的 postgres/redis，需要先完成 langfuse 数据库的创建
       langfuse-db-init:
         condition: service_completed_successfully
       redis:
@@ -958,7 +958,7 @@ services:
       LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
       LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
     networks:
-      - WeKnora-network
+      - weknora-network
     profiles:
       - langfuse
       - full
@@ -1000,7 +1000,7 @@ services:
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
     networks:
-      - WeKnora-network
+      - weknora-network
     profiles:
       - langfuse
       - full
@@ -1012,13 +1012,13 @@ services:
     ports:
       - "${MCP_PORT:-8082}:8000"
     environment:
-      - WEKNORA_BASE_URL=http://app:8080/api/v1
+      - WEKNORA_BASE_URL=http://app:5016/api/v1
       - WEKNORA_API_KEY=${WEKNORA_API_KEY:-}
       # HTTP/SSE 传输必填：mcp-server 启动时若缺少此项会拒绝启动（客户端以 Authorization: Bearer 携带）
       - MCP_SERVER_AUTH_TOKEN=${MCP_SERVER_AUTH_TOKEN:-}
-      # 调用 WeKnora REST 的读超时（秒，默认 300）
+      # 调用 小炬人 REST 的读超时（秒，默认 300）
       - WEKNORA_CHAT_TIMEOUT=${WEKNORA_CHAT_TIMEOUT:-300}
-      # 是否校验 WeKnora 后端 TLS 证书（默认 true；自签证书可设 false）
+      # 是否校验 小炬人 后端 TLS 证书（默认 true；自签证书可设 false）
       - WEKNORA_VERIFY_SSL=${WEKNORA_VERIFY_SSL:-true}
       # 允许上传的目录白名单（逗号分隔；留空禁用文件上传工具）
       - MCP_ALLOWED_UPLOAD_DIRS=${MCP_ALLOWED_UPLOAD_DIRS:-}
@@ -1026,13 +1026,13 @@ services:
       app:
         condition: service_healthy
     networks:
-      - WeKnora-network
+      - weknora-network
     restart: unless-stopped
     profiles:
       - full
 
 networks:
-  WeKnora-network:
+  weknora-network:
     driver: bridge
 
 volumes:

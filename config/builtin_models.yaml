@@ -1,11 +1,12 @@
 builtin_models:
+  # BGE-M3 remote embedding service (768 dimension)
   - id: builtin-bge-m3
     type: Embedding
     source: remote
     is_default: true
     name: bge-m3
     parameters:
-      base_url: http://host.docker.internal:3042
+      base_url: http://36.140.179.34:3081
       api_key: ""
       provider: generic
       interface_type: openai
@@ -13,16 +14,24 @@ builtin_models:
         dimension: 768
         truncate_prompt_tokens: 8192
 
-  - id: builtin-bge-large-zh
-    type: Embedding
+  # BGE-Reranker (重排序服务)
+  - id: builtin-bge-rerank
+    type: Rerank
     source: remote
     is_default: false
-    name: bge-large-zh-v1.5
+    name: bge-reranker
     parameters:
-      base_url: http://host.docker.internal:3042
+      base_url: http://36.140.179.34:3082
       api_key: ""
       provider: generic
-      interface_type: openai
+
+  # Ollama local embedding (可选，本地备选)
+  - id: builtin-ollama-embedding
+    type: Embedding
+    source: local
+    is_default: false
+    name: ${EMBEDDING_MODEL_NAME}
+    parameters:
       embedding_parameters:
         dimension: 768
-        truncate_prompt_tokens: 512
+        truncate_prompt_tokens: 8192
