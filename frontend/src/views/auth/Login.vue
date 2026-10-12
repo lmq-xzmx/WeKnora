@@ -215,11 +215,15 @@
                 {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
               </t-button>
 
-              <div class="register-cta" v-if="registrationEnabled">
+              <div class="register-cta" v-if="registrationEnabled || oidcEnabled">
                 <div class="register-cta__divider">
                   <span>{{ $t('auth.firstTime') }}</span>
                 </div>
-                <t-button theme="default" variant="outline" size="large" block class="register-cta__button"
+                <t-button v-if="oidcEnabled" theme="default" variant="outline" size="large" block class="register-cta__button"
+                  :disabled="loading" @click="handleOIDCLogin">
+                  {{ $t('auth.createAccount') }}
+                </t-button>
+                <t-button v-else theme="default" variant="outline" size="large" block class="register-cta__button"
                   :disabled="loading" @click="toggleMode">
                   {{ $t('auth.createAccount') }}
                 </t-button>
@@ -257,7 +261,31 @@
              AND either self-service registration is enabled OR they
              arrived with a valid share-link token (which bypasses the
              invite_only gate). -->
-        <div class="form-card" v-if="isRegisterMode && (registrationEnabled || inviteLookup)">
+        <!-- When OIDC is enabled, show SSO registration prompt instead of local form -->
+        <div class="form-card" v-if="isRegisterMode && oidcEnabled && !inviteLookup">
+          <div class="form-header">
+            <h2 class="form-title">{{ $t('auth.createAccount') }}</h2>
+            <p class="form-subtitle">{{ $t('auth.registerSubtitle') }}</p>
+          </div>
+          <div class="form-content">
+            <div class="oidc-divider">
+              <span>{{ $t('auth.orContinueWith') }}</span>
+            </div>
+            <t-button theme="primary" size="large" block :loading="oidcLoading" :disabled="loading"
+              class="oidc-button" @click="handleOIDCLogin">
+              {{ oidcLoading ? $t('auth.redirectingToOIDC') : oidcLoginText }}
+            </t-button>
+            <div class="form-footer">
+              <span>{{ $t('auth.haveAccount') }}</span>
+              <a href="#" @click.prevent="toggleMode" class="link-button">
+                {{ $t('auth.backToLogin') }}
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Local registration form (only shown when invite token present) -->
+        <div class="form-card" v-if="isRegisterMode && !oidcEnabled && inviteLookup">
           <!-- Share-link banner: shown only when ?token= resolved to a
                real invitation row. Sits above the form header so the
                invitee instantly sees who invited them and into which
