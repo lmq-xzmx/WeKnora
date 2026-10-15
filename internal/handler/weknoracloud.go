@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// WeKnoraCloudHandler 处理 WeKnoraCloud 凭证管理
+// 小炬人CloudHandler 处理 小炬人Cloud 凭证管理
 type WeKnoraCloudHandler struct {
 	svc interfaces.WeKnoraCloudService
 }

@@ -2,7 +2,7 @@
 Copyright 2025 Tencent
 SPDX-License-Identifier: MIT
 
-WeKnora Frontend Web UI Deployment and Service.
+小炬人 Frontend Web UI Deployment and Service.
 */}}
 {{- if .Values.frontend.enabled }}
 apiVersion: apps/v1

@@ -2,7 +2,7 @@
 Copyright 2025 Tencent
 SPDX-License-Identifier: MIT
 
-WeKnora Helm Chart Template Helpers
+小炬人 Helm Chart Template Helpers
 
 Best Practices References:
 - https://helm.sh/docs/chart_best_practices/templates/

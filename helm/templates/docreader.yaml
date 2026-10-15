@@ -2,7 +2,7 @@
 Copyright 2025 Tencent
 SPDX-License-Identifier: MIT
 
-WeKnora Document Reader (gRPC) Deployment and Service.
+小炬人 Document Reader (gRPC) Deployment and Service.
 */}}
 {{- if .Values.docreader.enabled }}
 apiVersion: apps/v1

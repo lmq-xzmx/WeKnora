@@ -1,12 +1,12 @@
-// Package main is the main package for the WeKnora server
+// Package main is the main package for the 小炬人 server
 // It contains the main function and the entry point for the server
 //
-// @title           WeKnora API
+// @title           小炬人 API
 // @version         1.0
-// @description     WeKnora 知识库管理系统 API 文档
+// @description     小炬人 知识库管理系统 API 文档
 // @termsOfService  http://swagger.io/terms/
 //
-// @contact.name   WeKnora Github
+// @contact.name   小炬人 Github
 // @contact.url    https://github.com/Tencent/WeKnora
 //
 // @BasePath  /api/v1

@@ -1,7 +1,7 @@
 # Copyright 2025 Tencent
 # SPDX-License-Identifier: MIT
 #
-# WeKnora Helm Chart Values
+# 小炬人 Helm Chart Values
 #
 # Best Practices References:
 # - https://helm.sh/docs/chart_best_practices/values/
@@ -90,7 +90,7 @@ app:
     allowPrivilegeEscalation: false
 
   # -- Environment variables for the app container
-  # Ref: https://github.com/Tencent/WeKnora/blob/main/docker-compose.yml
+  # Ref: https://github.com/Tencent/小炬人/blob/main/docker-compose.yml
   env:
     GIN_MODE: release
     # -- Retrieval driver: postgres, elasticsearch_v7, elasticsearch_v8, qdrant
@@ -402,7 +402,7 @@ secrets:
   jwtSecret: ""
   # -- System AES-256 key for database field encryption (must be exactly 32 bytes).
   # Encrypts: tenants.api_key, model API keys, vector store credentials,
-  # web search provider keys, WeKnoraCloud.AppSecret.
+  # web search provider keys, 小炬人Cloud.AppSecret.
   # STRONGLY RECOMMENDED to set this explicitly in production. If left empty, a
   # random 32-char value is generated on first install and reused on subsequent
   # `helm upgrade` via Secret lookup. However, if the Secret is ever

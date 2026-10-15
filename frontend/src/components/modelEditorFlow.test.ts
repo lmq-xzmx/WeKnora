@@ -772,14 +772,14 @@ test('the vision picker lists the vendor models the backend scoped to it', async
 })
 
 const cloudProvider = {
-  value: 'weknoracloud', label: 'WeKnora Cloud', description: '', order: 1,
+  value: 'weknoracloud', label: '小炬人 Cloud', description: '', order: 1,
   modelTypes: ['chat', 'embedding', 'rerank', 'vllm'],
   defaultUrls: Object.fromEntries(['chat', 'embedding', 'rerank', 'vllm'].map(type => [type, 'https://weknora.weixin.qq.com'])),
   models: [],
 }
 
 for (const [type, modelName] of [['chat', 'chat'], ['embedding', 'embedding'], ['rerank', 'rerank'], ['vllm', 'vlm']]) {
-  test(`WeKnora Cloud ${type}: an empty catalog still offers the managed model`, async () => {
+  test(`小炬人 Cloud ${type}: an empty catalog still offers the managed model`, async () => {
     const f = await fixture({ type, providers: [cloudProvider] })
     try {
       f.vm.formData.provider = 'weknoracloud'
@@ -801,7 +801,7 @@ for (const [type, modelName] of [['chat', 'chat'], ['embedding', 'embedding'], [
   })
 }
 
-test('switching WeKnora Cloud model types updates the managed choices', async () => {
+test('switching 小炬人 Cloud model types updates the managed choices', async () => {
   const f = await fixture({ providers: [cloudProvider] })
   try {
     f.vm.formData.provider = 'weknoracloud'

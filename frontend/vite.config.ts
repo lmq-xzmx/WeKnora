@@ -50,7 +50,10 @@ function embedHtmlDevFallback(): Plugin {
 const DEV_PROXY_TARGET =
   process.env.VITE_DEV_PROXY_TARGET ||
   process.env.FRONTEND_BACKEND_URL ||
-  'http://localhost:8080'
+  // Native mode: WeKnora backend listens on 5016 (config.yaml port) so vite
+  // proxies /api/* there. Docker mode: backend is exposed on 5016 via
+  // docker-compose, also works as-is.
+  'http://localhost:5016'
 
 function resolveVueOfficePptxEntry(): string {
   try {

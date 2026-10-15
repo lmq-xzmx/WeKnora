@@ -1,5 +1,5 @@
 <template>
-  <div class="weknoracloud-settings">
+  <div class="WeKnoraCloud-settings">
     <div class="section-header">
       <h2>{{ $t('settings.weknoraCloud.title') }}</h2>
       <p class="section-description">
@@ -369,7 +369,7 @@ onMounted(async () => {
 <style lang="less" scoped>
 @import (reference) '@/components/css/settings-section.less';
 
-.weknoracloud-settings {
+.WeKnoraCloud-settings {
   width: 100%;
 }
 

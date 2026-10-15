@@ -1,10 +1,10 @@
 # Server configuration
 # NOTE: the listening port MUST match the docker-compose expose port for the
-# weknora-app service (currently 8080 in dev and prod). If you change this,
+# weknora-app service (currently 5016 in dev and prod). If you change this,
 # also update docker-compose.{yml,dev}.yml — docker-proxy forwards host→container
 # by the *exposed* port, and a mismatch silently causes "Connection reset by peer".
 server:
-  port: 8080
+  port: 5016
   host: "0.0.0.0"
 
 # Conversation service configuration

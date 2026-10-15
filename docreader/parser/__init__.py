@@ -1,5 +1,5 @@
 """
-Parser module for WeKnora document processing system.
+Parser module for 小炬人 document processing system.
 
 This module provides document parsers for various file formats including:
 - Microsoft Word documents (.doc, .docx)

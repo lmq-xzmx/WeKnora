@@ -1,0 +1,12 @@
+# 简化版 Dockerfile：从损坏的镜像中提取文件系统 + 注入本地编译的二进制
+# 依赖：本机已 build 好 /tmp/WeKnora-bin
+FROM scratch
+COPY --from=wechatopenai/weknora-app:latest / /
+COPY WeKnora-bin /app/WeKnora
+COPY docker-entrypoint.sh /scripts/docker-entrypoint.sh
+USER appuser
+WORKDIR /app
+ENV TZ=Asia/Shanghai
+EXPOSE 8080
+ENTRYPOINT ["/scripts/docker-entrypoint.sh"]
+CMD ["./WeKnora"]

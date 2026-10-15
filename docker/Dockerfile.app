@@ -78,9 +78,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # Build the application with version info
 RUN --mount=type=cache,target=/go/pkg/mod \
     if [ "$WITH_ANYDOC" = "1" ]; then \
-        make build-prod GO_BUILD_TAGS=anydoc; \
+        make build-prod GO_BUILD_TAGS=anydoc BINARY_NAME=WeKnora; \
     else \
-        make build-prod; \
+        make build-prod BINARY_NAME=WeKnora; \
     fi
 RUN --mount=type=cache,target=/go/pkg/mod cp -r /go/pkg/mod/github.com/yanyiwu/ /app/yanyiwu/
 

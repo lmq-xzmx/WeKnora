@@ -1,6 +1,6 @@
 # 配置详解
 
-WeKnora 的配置由四层组成，**优先级从低到高**：
+小炬人 的配置由四层组成，**优先级从低到高**：
 
 | 层 | 位置 | 用途 |
 | --- | --- | --- |
@@ -157,7 +157,7 @@ flowchart LR
 `APP_EXTERNAL_URL` 影响 IM 渠道能否渲染知识库图片。IM 平台需要拿到公网 http(s) URL，二选一：
 
 1. 存储后端本身公网可达（对象存储用公网 endpoint，或把 `MINIO_ENDPOINT` 设成公网 host），此时 `resource://` 回退到后端预签名 URL，不需要本变量；
-2. 设置 `APP_EXTERNAL_URL`，`resource://` 图片被改写成 `<APP_EXTERNAL_URL>/r/<token>` 走 WeKnora 自身（需要 nginx 代理 `/r/`，官方前端镜像已内置该 location）。
+2. 设置 `APP_EXTERNAL_URL`，`resource://` 图片被改写成 `<APP_EXTERNAL_URL>/r/<token>` 走 小炬人 自身（需要 nginx 代理 `/r/`，官方前端镜像已内置该 location）。
 
 默认的 MinIO 内网部署与 `local` 后端都只能走第二种。IM 渠道已启用但本变量为空时，服务启动会打印一次 WARN；改写结果若不是 http(s) URL 会保留原引用并记录可操作的告警，而不是发出 IM 端无法访问的链接。
 
@@ -299,7 +299,7 @@ AWS S3 的 `S3_ACCESS_KEY` / `S3_SECRET_KEY` 可以**同时留空**，此时走 
 
 ### 本机浏览器（BrowserSkill，可选）
 
-用户通过 Chrome 扩展把本机浏览器连接到 WeKnora。Docker app 镜像已内置 `bsk` 与配套扩展，默认根据用户当前访问的页面地址生成连接地址，通常无需配置。
+用户通过 Chrome 扩展把本机浏览器连接到 小炬人。Docker app 镜像已内置 `bsk` 与配套扩展，默认根据用户当前访问的页面地址生成连接地址，通常无需配置。
 
 | 名称 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -324,18 +324,18 @@ AWS S3 的 `S3_ACCESS_KEY` / `S3_SECRET_KEY` 可以**同时留空**，此时走 
 | 名称 | 默认值 | 说明 |
 | --- | --- | --- |
 | `SEARXNG_PORT` | 8888 | 宿主机端口。不要与 `APP_PORT`（默认 8080）相同，否则 `localhost` 上的请求可能先命中 SearXNG，登录接口返回 HTML 404 |
-| `SEARXNG_BIND` | 127.0.0.1 | **默认只监听本机**。WeKnora 打包的配置关掉了 SearXNG 自身的限流（否则后端会被节流），所以不应直接暴露到 LAN；确实要开放请显式改成 `0.0.0.0` 并自行加固 |
+| `SEARXNG_BIND` | 127.0.0.1 | **默认只监听本机**。小炬人 打包的配置关掉了 SearXNG 自身的限流（否则后端会被节流），所以不应直接暴露到 LAN；确实要开放请显式改成 `0.0.0.0` 并自行加固 |
 | `SEARXNG_SECRET` | 空 | 入口脚本用它替换 `settings.yml` 里的 `secret_key`，对外开放时必须设 |
 
 自建 SearXNG 时记得把 `127.0.0.1` 加进 `SSRF_WHITELIST`，否则后端的 SSRF 防护会拦掉本机地址。用法见[网络搜索与网页抓取](../03-features/11-web-search.md)。
 
-**MCP Server**（把 WeKnora 暴露给 Claude Desktop 等 MCP 客户端，`--profile full`）：
+**MCP Server**（把 小炬人 暴露给 Claude Desktop 等 MCP 客户端，`--profile full`）：
 
 | 名称 | 默认值 | 说明 |
 | --- | --- | --- |
-| `WEKNORA_API_KEY` | 空 | mcp-server 反过来调 WeKnora REST 用的 Key，在「设置 → API Keys」生成 |
+| `WEKNORA_API_KEY` | 空 | mcp-server 反过来调 小炬人 REST 用的 Key，在「设置 → API Keys」生成 |
 | `MCP_SERVER_AUTH_TOKEN` | 空 | **HTTP/SSE 传输必填**，缺失时进程直接拒绝启动；客户端以 `Authorization: Bearer` 携带 |
-| `WEKNORA_CHAT_TIMEOUT` | 300 | 调 WeKnora REST 的读超时（秒） |
+| `WEKNORA_CHAT_TIMEOUT` | 300 | 调 小炬人 REST 的读超时（秒） |
 | `WEKNORA_VERIFY_SSL` | true | 是否校验后端 TLS 证书，自签证书可设 false |
 | `MCP_ALLOWED_UPLOAD_DIRS` | 空 | 允许上传的目录白名单（逗号分隔），留空即禁用文件上传工具 |
 

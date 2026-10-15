@@ -21,7 +21,7 @@ func ensureDesktopSigningKey() error {
 	if err != nil {
 		return err
 	}
-	return ensureDesktopSigningKeyInDir(filepath.Join(dir, "WeKnora Lite"))
+	return ensureDesktopSigningKeyInDir(filepath.Join(dir, "小炬人 Lite"))
 }
 
 func ensureDesktopSigningKeyInDir(dir string) error {

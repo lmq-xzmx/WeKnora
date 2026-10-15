@@ -1,16 +1,16 @@
 apiVersion: v2
-name: weknora
+name: 小炬人
 description: |
-  WeKnora - AI-powered Knowledge RAG Platform for building intelligent knowledge bases
+  小炬人 - AI-powered Knowledge RAG Platform for building intelligent knowledge bases
   with document parsing, vector search, and LLM integration.
 type: application
 version: 0.1.0
 appVersion: "v0.8.2"
 kubeVersion: ">=1.25.0-0"
-home: https://github.com/Tencent/WeKnora
-icon: https://raw.githubusercontent.com/Tencent/WeKnora/main/docs/images/logo.png
+home: https://github.com/Tencent/小炬人
+icon: https://raw.githubusercontent.com/Tencent/小炬人/main/docs/images/logo.png
 sources:
-  - https://github.com/Tencent/WeKnora
+  - https://github.com/Tencent/小炬人
 keywords:
   - ai
   - rag
@@ -20,7 +20,7 @@ keywords:
   - vector-search
   - chatbot
 maintainers:
-  - name: WeKnora Community
-    url: https://github.com/Tencent/WeKnora
+  - name: 小炬人 Community
+    url: https://github.com/Tencent/小炬人
 annotations:
   artifacthub.io/license: MIT

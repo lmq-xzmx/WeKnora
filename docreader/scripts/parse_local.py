@@ -1,6 +1,6 @@
 """本地解析调试脚本：直接调用 Parser 解析本地文件，不经过 gRPC 服务。
 
-用法（在仓库根目录 WeKnora 下执行）：
+用法（在仓库根目录 小炬人 下执行）：
     PYTHONPATH=. docreader/.venv/bin/python docreader/scripts/parse_local.py <文件路径> [--engine markitdown] [--out out.md]
 
 示例：

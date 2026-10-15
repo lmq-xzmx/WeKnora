@@ -2,12 +2,12 @@
 Copyright 2025 Tencent
 SPDX-License-Identifier: MIT
 
-Post-installation notes for WeKnora Helm chart.
+Post-installation notes for 小炬人 Helm chart.
 Ref: https://github.com/argoproj/argo-helm/blob/main/charts/argo-cd/templates/NOTES.txt
 */}}
 
 ================================================================================
-  WeKnora has been installed successfully!
+  小炬人 has been installed successfully!
 ================================================================================
 
 Release: {{ .Release.Name }}
@@ -15,17 +15,17 @@ Namespace: {{ .Release.Namespace }}
 Version: {{ .Chart.AppVersion }}
 
 --------------------------------------------------------------------------------
-  ACCESSING WEKNORA
+  ACCESSING 小炬人
 --------------------------------------------------------------------------------
 
 {{- if .Values.ingress.enabled }}
-WeKnora is accessible via Ingress:
+小炬人 is accessible via Ingress:
 
   URL: {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}
 
 {{- else }}
 
-To access WeKnora, use port-forwarding:
+To access 小炬人, use port-forwarding:
 
   # Frontend (Web UI)
   kubectl port-forward svc/frontend -n {{ .Release.Namespace }} 8080:80
@@ -36,7 +36,7 @@ To access WeKnora, use port-forwarding:
 
 {{- if not .Values.ingress.enabled }}
 
-To expose WeKnora externally, enable Ingress:
+To expose 小炬人 externally, enable Ingress:
 
   helm upgrade {{ .Release.Name }} ./helm \
     --set ingress.enabled=true \
@@ -83,7 +83,7 @@ Optional components enabled:
   CONNECTING TO LLM
 --------------------------------------------------------------------------------
 
-WeKnora requires an LLM backend. Configure via environment variables:
+小炬人 requires an LLM backend. Configure via environment variables:
 
   helm upgrade {{ .Release.Name }} ./helm \
     --set app.extraEnv[0].name=OLLAMA_BASE_URL \
@@ -122,9 +122,9 @@ Access Neo4j Browser:
   DOCUMENTATION
 --------------------------------------------------------------------------------
 
-  GitHub:  https://github.com/Tencent/WeKnora
-  API Docs: https://github.com/Tencent/WeKnora/blob/main/website-docs/04-api/01-api-overview.md
-  FAQ:     https://github.com/Tencent/WeKnora/blob/main/website-docs/01-getting-started/05-troubleshooting.md
+  GitHub:  https://github.com/Tencent/小炬人
+  API Docs: https://github.com/Tencent/小炬人/blob/main/website-docs/04-api/01-api-overview.md
+  FAQ:     https://github.com/Tencent/小炬人/blob/main/website-docs/01-getting-started/05-troubleshooting.md
 
 --------------------------------------------------------------------------------
   TROUBLESHOOTING

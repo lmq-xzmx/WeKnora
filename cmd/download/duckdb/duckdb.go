@@ -8,7 +8,7 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
-// duckdbExtensions is the list of DuckDB extensions required by WeKnora's
+// duckdbExtensions is the list of DuckDB extensions required by 小炬人's
 // data analysis tool. `spatial` is used for layer metadata (st_read_meta)
 // so we can enumerate sheet names from Excel files, while `excel` provides
 // the dedicated read_xlsx reader with proper type inference.

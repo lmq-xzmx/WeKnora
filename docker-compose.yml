@@ -1033,7 +1033,8 @@ services:
 
 networks:
   weknora-network:
-    driver: bridge
+    external: true
+    name: weknora_weknora-network
 
 volumes:
   postgres-data:

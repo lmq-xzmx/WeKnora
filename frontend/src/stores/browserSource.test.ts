@@ -37,7 +37,7 @@ test('browser and web search selections are independent and persisted', () => {
   store.toggleLocalBrowser(true)
   assert.equal(store.isLocalBrowserEnabled, true)
   assert.equal(store.settings.webSearchEnabled, true)
-  assert.equal(JSON.parse(items.get('WeKnora_settings')!).localBrowserEnabled, true)
+  assert.equal(JSON.parse(items.get('小炬人_settings')!).localBrowserEnabled, true)
   store.toggleWebSearch(false)
   assert.equal(store.isLocalBrowserEnabled, true)
   store.toggleWebSearch(true)
@@ -53,7 +53,7 @@ test('reasoning overrides belong to the session, restore on reload and never bec
   assert.equal(store.reasoningEffortOverride, '')
   store.reasoningEffortOverride = 'high'
   store.toggleWebSearch(true)
-  assert.equal(JSON.stringify(JSON.parse(items.get('WeKnora_settings')!)).includes('high'), false)
+  assert.equal(JSON.stringify(JSON.parse(items.get('小炬人_settings')!)).includes('high'), false)
   store.hydrateSessionInputState({}, true)
   assert.equal(store.reasoningEffortOverride, 'high', 'first send keeps the createChat choice')
   store.restoreDefaultsIfSnapshotted()

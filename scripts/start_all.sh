@@ -18,7 +18,7 @@ SCRIPT_NAME=$(basename "$0")
 
 # 显示帮助信息
 show_help() {
-    printf "%b\n" "${GREEN}WeKnora 启动脚本 v${VERSION}${NC}"
+    printf "%b\n" "${GREEN}小炬人 启动脚本 v${VERSION}${NC}"
     printf "%b\n" "${GREEN}用法:${NC} $0 [选项]"
     echo "选项:"
     echo "  -h, --help     显示帮助信息"
@@ -39,7 +39,7 @@ show_help() {
 
 # 显示版本信息
 show_version() {
-    printf "%b\n" "${GREEN}WeKnora 启动脚本 v${VERSION}${NC}"
+    printf "%b\n" "${GREEN}小炬人 启动脚本 v${VERSION}${NC}"
     exit 0
 }
 
@@ -106,7 +106,7 @@ pick_python_bin() {
     return 1
 }
 
-# 启动 PaddleOCR-VL 本地服务（WeKnora/scripts/paddleocr_vl_server.py）
+# 启动 PaddleOCR-VL 本地服务（小炬人/scripts/paddleocr_vl_server.py）
 start_paddleocr_vl() {
     local script_path="$SCRIPT_DIR/$PADDLEOCR_VL_SCRIPT_NAME"
     if [ ! -f "$script_path" ]; then
@@ -214,7 +214,7 @@ check_paddleocr_vl() {
 }
 
 # --------------------------------------------------------------------------
-# BGE→OpenAI 格式代理（解决自建 BGE 服务器响应格式与 WeKnora generic 接口格式不兼容的问题）
+# BGE→OpenAI 格式代理（解决自建 BGE 服务器响应格式与 小炬人 generic 接口格式不兼容的问题）
 # --------------------------------------------------------------------------
 BGE_PROXY_DEFAULT_PORT=3042
 BGE_PROXY_DEFAULT_BGE_URL="http://36.140.179.34:3041"

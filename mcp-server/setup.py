@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WeKnora MCP Server 安装脚本
+小炬人 MCP Server 安装脚本
 """
 
 from setuptools import setup
@@ -12,7 +12,7 @@ def read_readme():
         with open("README.md", "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
-        return "WeKnora MCP Server - Model Context Protocol server for WeKnora API"
+        return "小炬人 MCP Server - Model Context Protocol server for 小炬人 API"
 
 
 # 读取依赖
@@ -34,9 +34,9 @@ def read_requirements():
 setup(
     name="tencent-weknora-mcp",
     version="1.1.1",
-    author="WeKnora Team",
+    author="小炬人 Team",
     author_email="support@weknora.com",
-    description="WeKnora MCP Server - Model Context Protocol server for WeKnora API",
+    description="小炬人 MCP Server - Model Context Protocol server for 小炬人 API",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
     url="https://github.com/Tencent/WeKnora/tree/main/mcp-server",

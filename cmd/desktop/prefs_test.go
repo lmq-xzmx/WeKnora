@@ -37,7 +37,7 @@ func TestUseDesktopFilesDirReplacesDockerDefault(t *testing.T) {
 	require.False(t, useDesktopFilesDir("/Users/dev/custom-files"))
 }
 
-func TestConfigureDesktopFileStorageUsesHomeWeKnora(t *testing.T) {
+func TestConfigureDesktopFileStorageUsesHome小炬人(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("LOCAL_STORAGE_BASE_DIR", "/data/files")
@@ -49,7 +49,7 @@ func TestConfigureDesktopFileStorageUsesHomeWeKnora(t *testing.T) {
 }
 
 func TestLegacyDesktopFilesDirFollowsTheOldResolution(t *testing.T) {
-	appSupport := "/Users/dev/Library/Application Support/WeKnora"
+	appSupport := "/Users/dev/Library/Application Support/小炬人"
 	require.Equal(t, filepath.Join(appSupport, "data", "files"), legacyDesktopFilesDir("", appSupport))
 	require.Equal(t, filepath.Join(appSupport, "data", "files"), legacyDesktopFilesDir("/data/files", appSupport))
 	require.Equal(t, filepath.Join(appSupport, "custom", "files"), legacyDesktopFilesDir("custom/files", appSupport))
@@ -63,7 +63,7 @@ func TestConfigureDesktopFileStorageMigratesFromTheBundleDir(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(old, "1"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(old, "1", "a.txt"), []byte("a"), 0o600))
 
-	configureDesktopFileStorage("/Applications/WeKnora.app/Contents/MacOS/WeKnora")
+	configureDesktopFileStorage("/Applications/小炬人.app/Contents/MacOS/小炬人")
 
 	require.FileExists(t, filepath.Join(home, ".weknora", "data", "files", "1", "a.txt"))
 }

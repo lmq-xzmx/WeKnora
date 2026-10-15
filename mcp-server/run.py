@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WeKnora MCP Server 便捷启动脚本
+小炬人 MCP Server 便捷启动脚本
 
 这是一个简化的启动脚本，提供最基本的功能。
 对于更多选项，请使用 main.py
@@ -26,7 +26,7 @@ def main():
     base_url = os.getenv("WEKNORA_BASE_URL", "http://localhost:8080/api/v1")
     api_key = os.getenv("WEKNORA_API_KEY", "")
 
-    print("WeKnora MCP Server", file=sys.stderr)
+    print("小炬人 MCP Server", file=sys.stderr)
     print(f"Base URL: {base_url}", file=sys.stderr)
     print(f"API Key: {'已设置' if api_key else '未设置'}", file=sys.stderr)
     print("-" * 40, file=sys.stderr)

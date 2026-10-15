@@ -51,7 +51,7 @@ detect_compose_cmd() {
 
 # 显示帮助信息
 show_help() {
-    printf "%b\n" "${GREEN}WeKnora 开发环境脚本${NC}"
+    printf "%b\n" "${GREEN}小炬人 开发环境脚本${NC}"
     echo "用法: $0 [命令] [选项]"
     echo ""
     echo "命令:"
@@ -172,7 +172,7 @@ _wait_odl_hybrid_ready() {
         sleep "$interval"
         waited=$((waited + interval))
     done
-    log_warning "odl-hybrid 在 ${max_wait}s 内未就绪，请查看: docker logs WeKnora-odl-hybrid"
+    log_warning "odl-hybrid 在 ${max_wait}s 内未就绪，请查看: docker logs 小炬人-odl-hybrid"
     return 1
 }
 

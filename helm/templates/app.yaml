@@ -2,7 +2,7 @@
 Copyright 2025 Tencent
 SPDX-License-Identifier: MIT
 
-WeKnora Backend API Server Deployment and Service.
+小炬人 Backend API Server Deployment and Service.
 */}}
 {{- if .Values.app.enabled }}
 apiVersion: apps/v1

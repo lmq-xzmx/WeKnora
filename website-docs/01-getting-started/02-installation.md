@@ -1,6 +1,6 @@
 # 安装部署
 
-WeKnora 支持 Docker Compose、Kubernetes Helm、Lite 单二进制和桌面应用。服务器部署可选择 Compose 或 Helm；本地使用可选择 Lite；参与开发时使用独立的开发编排。各方式的依赖、启动命令和数据目录如下。
+小炬人 支持 Docker Compose、Kubernetes Helm、Lite 单二进制和桌面应用。服务器部署可选择 Compose 或 Helm；本地使用可选择 Lite；参与开发时使用独立的开发编排。各方式的依赖、启动命令和数据目录如下。
 
 ## 部署形态总览
 
@@ -28,7 +28,7 @@ flowchart TB
         LOCALFE["宿主机 npm run dev 前端"] --> LOCALAPP
     end
     subgraph lite["Lite / 桌面 (单进程)"]
-        BIN["WeKnora-lite 二进制 (内嵌 web/ 前端)"]
+        BIN["小炬人-lite 二进制 (内嵌 web/ 前端)"]
         BIN --> SQLITE[("SQLite: FTS5 + sqlite-vec")]
         BIN --> MEMQ[("内存流管理")]
         BIN -. "可选" .-> DR3["docreader 127.0.0.1:50051"]
@@ -50,7 +50,7 @@ Compose 默认 ParadeDB `v0.22.6-pg17` 的 x86 CPU 基线为 `x86-64-v2`（包�
 最快路径：
 
 ```bash
-git clone https://github.com/Tencent/WeKnora.git && cd WeKnora
+git clone https://github.com/Tencent/小炬人.git && cd 小炬人
 cp .env.example .env              # 编辑必填项：DB_USER/DB_PASSWORD/DB_NAME、REDIS_PASSWORD、JWT_SECRET、SYSTEM_AES_KEY
 make start-all                # 等价 ./scripts/start_all.sh（默认拉取最新镜像）
 # 或直接：
@@ -71,7 +71,7 @@ docker compose ps                 # 等所有服务变成 healthy/running
 
 若已有部署并下载了更新的 release：
 
-> 如果数据库仍为 ParadeDB `v0.22.2-pg17`，先按 [ParadeDB 升级说明](06-paradedb-upgrade.md) 停止写入、备份、保留数据卷更换镜像并完成 `pg_search` 扩展升级，再恢复应用。仅替换镜像不会更新已有数据库的扩展 SQL；迁移 `000099` 会处理 WeKnora 库中符合条件的 `0.22.2–0.22.5`，其他数据库仍需单独检查。
+> 如果数据库仍为 ParadeDB `v0.22.2-pg17`，先按 [ParadeDB 升级说明](06-paradedb-upgrade.md) 停止写入、备份、保留数据卷更换镜像并完成 `pg_search` 扩展升级，再恢复应用。仅替换镜像不会更新已有数据库的扩展 SQL；迁移 `000099` 会处理 小炬人 库中符合条件的 `0.22.2–0.22.5`，其他数据库仍需单独检查。
 
 ```bash
 # 在 .env 中将 WEKNORA_VERSION 设为目标版本（如 0.7.0），或保持 latest
@@ -105,7 +105,7 @@ docker compose up -d
 | `weaviate` | `weaviate` | 9035（HTTP）/ 50052（gRPC） | 向量库 |
 | `doris` | `doris-fe` + `doris-be` | 8030（FE HTTP）/ 9030（FE MySQL）/ 8040（BE） | Apache Doris 4.1 检索引擎（需 >= 3.0，HNSW ANN） |
 | `dex`（含 `full`） | `dex` | 5556 | OIDC 测试用 IdP（配置在 `misc/dex-config.yaml`） |
-| `langfuse`（含 `full`） | `langfuse-db-init`、`langfuse-clickhouse`、`langfuse-minio`、`langfuse-worker`、`langfuse-web` | 3000（UI）/ 9100/9101（专用 MinIO） | 自建 Langfuse 可观测栈，复用 WeKnora 的 postgres（新建 `langfuse` 库）与 redis（DB 1） |
+| `langfuse`（含 `full`） | `langfuse-db-init`、`langfuse-clickhouse`、`langfuse-minio`、`langfuse-worker`、`langfuse-web` | 3000（UI）/ 9100/9101（专用 MinIO） | 自建 Langfuse 可观测栈，复用 小炬人 的 postgres（新建 `langfuse` 库）与 redis（DB 1） |
 | `odl-hybrid` | `odl-hybrid` | expose 5002 | OpenDataLoader/Docling PDF 混合解析后端（仅本地构建，配 `DOCREADER_ODL_HYBRID` 使用） |
 | `full` | `sandbox`、`mcp` 及上述带 full 标记的服务 | mcp: `${MCP_PORT:-8082}:8000` | `sandbox` 仅用于 build/pull 镜像（`command: ["true"]`，非常驻）。Docker 沙箱默认关闭，需设 `WEKNORA_SANDBOX_DOCKER_ENABLED=true` 并挂载 `docker.sock`（等同宿主机 root）；Cube/E2B 不依赖本机 daemon。`mcp` 为 MCP Server |
 
@@ -132,7 +132,7 @@ make dev-logs / dev-status / dev-stop / dev-restart
 
 | Dockerfile | 产物镜像 | 要点 |
 | --- | --- | --- |
-| `docker/Dockerfile.app` | `wechatopenai/weknora-app` | 三阶段：先构建 BrowserSkill 的 `bsk` 与配套 Chrome 扩展（装入 `/opt/weknora/browserskill/`，见[本机浏览器](../05-clients/09-local-browser.md)）；再用 `golang:1.26-bookworm` 编译（`make build-prod`，默认 `WITH_ANYDOC=1` 链接进程内 office 解析引擎，注入版本信息，预下载 DuckDB 扩展 `cmd/download/duckdb`）→ `debian:12.12-slim` 运行层（含 `migrate` 迁移工具、python3/node/uvx（供 stdio MCP 使用）、ffmpeg（ASR）、gosu 降权，以及第三方许可证文本）。入口 `scripts/docker-entrypoint.sh`：修复挂载目录属主；若挂载了 docker.sock，按 socket GID 把 appuser 加入对应组（compose `group_add` 在 gosu 后无效），再以 appuser 运行 `./WeKnora`。`EXPOSE 8080` |
+| `docker/Dockerfile.app` | `wechatopenai/weknora-app` | 三阶段：先构建 BrowserSkill 的 `bsk` 与配套 Chrome 扩展（装入 `/opt/weknora/browserskill/`，见[本机浏览器](../05-clients/09-local-browser.md)）；再用 `golang:1.26-bookworm` 编译（`make build-prod`，默认 `WITH_ANYDOC=1` 链接进程内 office 解析引擎，注入版本信息，预下载 DuckDB 扩展 `cmd/download/duckdb`）→ `debian:12.12-slim` 运行层（含 `migrate` 迁移工具、python3/node/uvx（供 stdio MCP 使用）、ffmpeg（ASR）、gosu 降权，以及第三方许可证文本）。入口 `scripts/docker-entrypoint.sh`：修复挂载目录属主；若挂载了 docker.sock，按 socket GID 把 appuser 加入对应组（compose `group_add` 在 gosu 后无效），再以 appuser 运行 `./小炬人`。`EXPOSE 8080` |
 | `docker/Dockerfile.docreader` | `wechatopenai/weknora-docreader` | Python 3.10 + uv 依赖锁定；生成 protobuf；运行层安装 LibreOffice、OpenJDK 17、antiword、Playwright（webkit）与 `grpc_health_probe`。轻量版不含 PaddleOCR。`EXPOSE 50051`。支持 `APT_MIRROR` 构建参数 |
 | `docker/Dockerfile.odl-hybrid` | `weknora-odl-hybrid:local` | 安装 `opendataloader-pdf[hybrid]`（Docling），监听 5002，默认 `--no-ocr`；仅本地构建不发布 |
 | `docker/Dockerfile.sandbox` | `wechatopenai/weknora-sandbox` | Agent 会话沙箱镜像。基础环境为 Python 3.12-slim + Node 20 + uv/pnpm，默认 `root` 执行，保留 `user`(UID 1000) 供显式选择。默认构建目标 `sandbox` 供 Docker 后端使用；另有 `cube`（含 Cube envd）、`desktop` / `desktop-cube`（带图形桌面）等目标，见[沙箱部署](../06-development/04-sandbox-deployment.md) |
@@ -236,7 +236,7 @@ Lite 模式通过编译期 `EDITION=lite` 与运行期 `.env.lite` 环境实现�
 
 ```bash
 cp .env.lite.example .env.lite      # 填写 SYSTEM_AES_KEY（openssl rand -hex 16）与 JWT_SECRET
-make run-lite                       # 构建并以 .env.lite 环境启动 ./WeKnora-lite
+make run-lite                       # 构建并以 .env.lite 环境启动 ./小炬人-lite
 make package-lite                   # 打包发行 tarball（scripts/package-lite.sh）
 ```
 
@@ -251,7 +251,7 @@ make package-lite                   # 打包发行 tarball（scripts/package-lit
 :::
 
 - 入口 `cmd/desktop/main.go` + `cmd/desktop/wails.json`；`cmd/desktop/app.go` 向前端暴露 `GetAPIBaseURL`（返回 `http://127.0.0.1:PORT/api/v1`）、HTTP 端口与「绑定到局域网」设置、`CheckForUpdates` 自动更新检查等绑定方法。
-- `scripts/package-mac-app.sh`：先构建前端到 `web/`，再 `wails build -tags "sqlite_fts5"`，最后组装 `.app` 包 —— `Contents/MacOS/WeKnora Lite` 为主程序，`Contents/Resources` 内嵌 `.env`、config、`migrations/sqlite`、web 前端；相对路径数据自动重定向到 `~/Library/Application Support/WeKnora Lite/data/`，日志写 `~/Library/Logs/WeKnora Lite/`。
+- `scripts/package-mac-app.sh`：先构建前端到 `web/`，再 `wails build -tags "sqlite_fts5"`，最后组装 `.app` 包 —— `Contents/MacOS/小炬人 Lite` 为主程序，`Contents/Resources` 内嵌 `.env`、config、`migrations/sqlite`、web 前端；相对路径数据自动重定向到 `~/Library/Application Support/小炬人 Lite/data/`，日志写 `~/Library/Logs/小炬人 Lite/`。
 
 ```bash
 make package-mac-app
@@ -262,7 +262,7 @@ make package-mac-app
 ```bash
 # 后端（标准版，需本地 postgres/redis/docreader，见开发模式）
 go mod download
-make build && ./WeKnora                       # 或 make build-prod
+make build && ./小炬人                       # 或 make build-prod
 
 # 前端
 cd frontend && npm ci && npm run dev          # 开发；npm run build 产出 dist/
@@ -293,7 +293,7 @@ flowchart TB
     end
     subgraph laptop["个人：Lite / 桌面"]
         direction LR
-        U3["用户"] --> L1["WeKnora-lite 单进程 (内嵌前端 + SQLite + 内存队列)"]
+        U3["用户"] --> L1["小炬人-lite 单进程 (内嵌前端 + SQLite + 内存队列)"]
         L1 --> O3["Ollama / 远程 OpenAI 兼容 API"]
     end
 ```
