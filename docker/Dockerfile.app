@@ -13,7 +13,8 @@ ARG TARGETARCH
 RUN bash scripts/build_browserskill.sh /opt/weknora/browserskill "${TARGETOS}/${TARGETARCH}"
 
 # Build stage
-FROM golang:1.26-bookworm AS builder
+# Digest pinned for reproducibility: change only when upgrading Go version
+FROM golang:1.26-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS builder
 
 WORKDIR /app
 
@@ -85,7 +86,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 RUN --mount=type=cache,target=/go/pkg/mod cp -r /go/pkg/mod/github.com/yanyiwu/ /app/yanyiwu/
 
 # Final stage
-FROM debian:12.12-slim
+# Digest pinned for reproducibility
+FROM debian:12.12-slim@sha256:d5d3f9c23164ea16f31852f95bd5959aad1c5e854332fe00f7b3a20fcc9f635c
 
 WORKDIR /app
 

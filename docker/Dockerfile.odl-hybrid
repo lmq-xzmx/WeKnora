@@ -10,7 +10,8 @@
 # full toolchain image, then copy only the venv + binaries into a slim
 # runtime image to drop the final size by ~30% (no gcc / libpython-dev).
 # syntax=docker/dockerfile:1.6
-FROM python:3.10-slim-bookworm AS builder
+# Digest pinned for reproducibility
+FROM python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370 AS builder
 
 WORKDIR /app
 
@@ -37,14 +38,17 @@ RUN apt-get update \
 # Build into a venv so the runtime stage has no pip / setuptools / build tooling.
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/pip install --no-cache-dir "opendataloader-pdf[hybrid]>=2.4.7"
+        -i https://mirrors.aliyun.com/pypi/simple/ \
+    && /opt/venv/bin/pip install --no-cache-dir "opendataloader-pdf[hybrid]>=2.4.7" \
+        -i https://mirrors.aliyun.com/pypi/simple/
 
 
 # Runtime: clean slim image, only the venv + needed libs (already installed
 # in the builder layer above, the apt cache was wiped after install so this
 # stage starts from the same base + has the libraries baked in via the
 # builder's lower layer).
-FROM python:3.10-slim-bookworm AS runtime
+# Digest pinned for reproducibility
+FROM python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370 AS runtime
 
 # Re-install just the runtime libraries (cheap, no toolchain).
 RUN apt-get update \

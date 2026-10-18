@@ -1,7 +1,8 @@
 # =========================
 # 构建阶段（轻量化：仅文档解析 + 图片提取，无 OCR/VLM）
 # =========================
-FROM python:3.10-slim-bookworm AS builder
+# Digest pinned for reproducibility
+FROM python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370 AS builder
 
 ARG APT_MIRROR=""
 RUN if [ -n "$APT_MIRROR" ]; then \
@@ -78,7 +79,8 @@ RUN chmod +x docreader/scripts/generate_proto.sh && \
 # =========================
 # 运行阶段（轻量化）
 # =========================
-FROM python:3.10-slim-bookworm AS runner
+# Digest pinned for reproducibility
+FROM python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370 AS runner
 
 ARG APT_MIRROR=""
 RUN if [ -n "$APT_MIRROR" ]; then \

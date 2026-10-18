@@ -2,4 +2,15 @@ version: '3.8'
 services:
   frontend:
     volumes:
-      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./frontend/dist:/usr/share/nginx/html
+    networks:
+      - weknora-network
+  app:
+    environment:
+      OIDC_AUTH_AUTHORIZATION_ENDPOINT: http://36.212.140.68:3012/login/oauth/authorize
+      OIDC_AUTH_TOKEN_ENDPOINT: http://36.212.140.68:3012/api/login/oauth/access_token
+      OIDC_AUTH_USER_INFO_ENDPOINT: http://36.212.140.68:3012/api/userinfo
+      OIDC_AUTH_JWKS_URI: http://36.212.140.68:3012/.well-known/jwks
+      OIDC_AUTH_DISCOVERY_URL: http://36.212.140.68:3012/.well-known/openid-configuration
+      OIDC_AUTH_ISSUER_URL: http://36.212.140.68:3012
+      SSRF_WHITELIST_EXTRA: 36.212.140.68,minio

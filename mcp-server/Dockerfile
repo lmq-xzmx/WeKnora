@@ -3,7 +3,8 @@
 # Stage 1: install deps into a venv (isolated from runtime image).
 # Stage 2: copy venv + source into a clean slim runtime.
 
-FROM python:3.11-slim-bookworm AS builder
+# Digest pinned for reproducibility
+FROM python:3.11-slim-bookworm@sha256:0a310eeecf4e1f5a0743f9a6520c90c88d089c903ca5fd283f501e3a805f5f89 AS builder
 
 WORKDIR /app
 
@@ -30,7 +31,8 @@ RUN /opt/venv/bin/pip install --no-cache-dir -e .
 
 
 # Runtime: clean slim image, only the venv + source.
-FROM python:3.11-slim-bookworm AS runtime
+# Digest pinned for reproducibility
+FROM python:3.11-slim-bookworm@sha256:0a310eeecf4e1f5a0743f9a6520c90c88d089c903ca5fd283f501e3a805f5f89 AS runtime
 
 # Copy the prebuilt venv from builder.
 COPY --from=builder /opt/venv /opt/venv

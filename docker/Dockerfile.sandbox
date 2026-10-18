@@ -26,16 +26,19 @@
 ARG TARGETPLATFORM=linux/amd64
 
 # Stage 1: Get Node.js binaries
-FROM --platform=$TARGETPLATFORM node:20-slim AS node-base
+# Digest pinned for reproducibility
+FROM --platform=$TARGETPLATFORM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS node-base
 
-FROM --platform=$TARGETPLATFORM ghcr.io/astral-sh/uv:0.12.4 AS uv-base
+# Digest pinned for reproducibility
+FROM --platform=$TARGETPLATFORM ghcr.io/astral-sh/uv:0.12.4@sha256:d0a6eca6c669dc7e9c51218707b8438a3d30402733d739dcc00adb3e213e8f5c AS uv-base
 
 # Stage 2: Runtime image
 #
 # 3.12 is the floor because skill sources commonly use PEP 701 nested quotes
 # in f-strings (f"x={d["k"]}"). Install-time ast.parse runs this interpreter;
 # 3.11 rejects that syntax and the whole skill install fails.
-FROM --platform=$TARGETPLATFORM python:3.12-slim AS runtime
+# Digest pinned for reproducibility
+FROM --platform=$TARGETPLATFORM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS runtime
 
 # Copy Node.js from node image (avoids NodeSource install overhead)
 COPY --from=node-base /usr/local/bin/node /usr/local/bin/
@@ -112,7 +115,8 @@ USER root
 # This target is linux/amd64 only: cubesandbox-base publishes no arm64 image,
 # which matches Cube itself (PVM is x86_64-only). Hard-pin the FROM so a
 # forgotten --platform cannot copy an amd64 envd onto an arm64 runtime.
-FROM --platform=linux/amd64 ghcr.io/tencentcloud/cubesandbox-base:2026.16 AS cube-base
+# Digest pinned for reproducibility (amd64 only, no arm64 variant exists)
+FROM --platform=linux/amd64 ghcr.io/tencentcloud/cubesandbox-base:2026.16@sha256:a1dd972a4eef85448f967daed3bda42c6be2b7f42bf64c1f4d38e63b3e935472 AS cube-base
 
 FROM runtime AS cube
 

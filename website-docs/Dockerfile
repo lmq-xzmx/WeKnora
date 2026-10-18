@@ -5,7 +5,8 @@
 # No host Node.js installation or prebuilt static-site/ is required.
 # WEBSITE_NGINX_PORT is written into default.conf at build time. The intranet
 # platform starts `nginx; sleep infinity` and does not run docker-entrypoint.sh.
-FROM node:24-bookworm-slim AS builder
+# Digest pinned for reproducibility
+FROM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS builder
 # Single apt-get invocation; git is the only build-time tool we need beyond
 # what node:24-bookworm-slim already ships.
 RUN apt-get update \

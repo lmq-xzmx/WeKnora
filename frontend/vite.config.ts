@@ -131,11 +131,11 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
-    host: true,
+    port: 3015,
+    host: "0.0.0.0",
     hmr: {
       host: 'localhost',
-      port: 5173,
+      port: 3015,
       strictPort: false,
     },
     // 代理配置，用于开发环境
@@ -171,7 +171,7 @@ export default defineConfig({
   // 同样的压缩 / 拆包 / CSS 加载顺序，可提前暴露只在生产构建出现的问题
   // （如主题变量被打包顺序覆盖）。用法：npm run build && npm run preview
   preview: {
-    port: 4173,
+    port: 3015,
     host: true,
     proxy: {
       '/mcp/': {
