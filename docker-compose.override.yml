@@ -13,4 +13,4 @@ services:
       OIDC_AUTH_JWKS_URI: http://36.212.140.68:3012/.well-known/jwks
       OIDC_AUTH_DISCOVERY_URL: http://36.212.140.68:3012/.well-known/openid-configuration
       OIDC_AUTH_ISSUER_URL: http://36.212.140.68:3012
-      SSRF_WHITELIST_EXTRA: 36.212.140.68,minio
+      SSRF_WHITELIST_EXTRA: 36.212.140.68,36.140.179.34,minio

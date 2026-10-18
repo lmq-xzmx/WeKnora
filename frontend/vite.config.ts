@@ -76,6 +76,7 @@ export default defineConfig({
     __FRONTEND_COMMIT__: JSON.stringify(FRONTEND_COMMIT),
   },
   build: {
+    minify: 'esbuild',
     modulePreload: {
       resolveDependencies(_filename, deps, { hostId }) {
         // Embed iframe bootstraps with token exchange only; defer heavy chat chunks.

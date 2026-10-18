@@ -585,9 +585,8 @@ export const useSettingsStore = defineStore("settings", {
             .map(item => item.skill_name || item.id);
         }
         this.settings.localBrowserEnabled = state.local_browser_enabled === true;
-        if (typeof state.web_search_enabled === "boolean") {
-          this.settings.webSearchEnabled = state.web_search_enabled;
-        }
+        // 注意：不覆盖 webSearchEnabled，因为这是用户的全局偏好设置，
+        // 不应该被旧会话状态污染。用户的联网搜索偏好由 localStorage 持久化。
       } finally {
         // 复位必须延后到下一次 flush 之后：监听 selectedAgentId 的 watcher 默认
         // flush:'pre'，是异步执行的；若在此处同步复位，watcher 真正运行时标志早已
