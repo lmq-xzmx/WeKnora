@@ -22,6 +22,9 @@ type OIDCStatePayload struct {
 	Nonce       string `json:"nonce"`
 	RedirectURI string `json:"redirect_uri,omitempty"`
 	IssuedAt    int64  `json:"iat"`
+	// TenantID is used in Plan D (multi-tenant OIDC routing) to identify the target tenant.
+	// When 0, the tenant is resolved from the domain in the callback request.
+	TenantID uint64 `json:"tenant_id,omitempty"`
 }
 
 var (

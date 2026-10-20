@@ -5229,7 +5229,7 @@ export default {
   auth: {
     login: '登录',
     logout: '退出',
-    oidcLogin: '使用 OIDC 登录',
+    oidcLogin: '使用组织账号登录',
     oidcLoginWithProvider: '使用 {provider} 登录',
     redirectingToOIDC: '正在跳转到身份提供商...',
     orContinueWith: '或使用以下方式继续',

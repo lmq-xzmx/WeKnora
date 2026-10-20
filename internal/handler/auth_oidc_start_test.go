@@ -18,11 +18,11 @@ import (
 // test focused on the OIDCStart handler's branching logic.
 type stubOIDCStartUserService struct {
 	interfaces.UserService
-	getOIDCAuthorizationURL func(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error)
+	getOIDCAuthorizationURL func(ctx context.Context, redirectURI, host string) (*types.OIDCAuthURLResponse, error)
 }
 
-func (s *stubOIDCStartUserService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error) {
-	return s.getOIDCAuthorizationURL(ctx, redirectURI)
+func (s *stubOIDCStartUserService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI, host string) (*types.OIDCAuthURLResponse, error) {
+	return s.getOIDCAuthorizationURL(ctx, redirectURI, host)
 }
 
 func newOIDCStartTestRouter(h *AuthHandler) *gin.Engine {
@@ -39,7 +39,7 @@ func newOIDCStartTestRouter(h *AuthHandler) *gin.Engine {
 func TestOIDCStart_RedirectsToAuthProvider(t *testing.T) {
 	const authURL = "http://idp.example.com/authorize?client_id=weknora"
 	us := &stubOIDCStartUserService{
-		getOIDCAuthorizationURL: func(context.Context, string) (*types.OIDCAuthURLResponse, error) {
+		getOIDCAuthorizationURL: func(context.Context, string, string) (*types.OIDCAuthURLResponse, error) {
 			return &types.OIDCAuthURLResponse{
 				Success:          true,
 				AuthorizationURL: authURL,
@@ -79,7 +79,7 @@ func TestOIDCStart_RedirectsToAuthProvider(t *testing.T) {
 func TestOIDCStart_BuildsCallbackURLFromRequestOrigin(t *testing.T) {
 	var captured string
 	us := &stubOIDCStartUserService{
-		getOIDCAuthorizationURL: func(_ context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error) {
+		getOIDCAuthorizationURL: func(_ context.Context, redirectURI, _ string) (*types.OIDCAuthURLResponse, error) {
 			captured = redirectURI
 			return &types.OIDCAuthURLResponse{Success: true, AuthorizationURL: "http://idp", Nonce: "n"}, nil
 		},
@@ -106,7 +106,7 @@ func TestOIDCStart_BuildsCallbackURLFromRequestOrigin(t *testing.T) {
 // built, never 302 — surface the error the same way /auth/oidc/url does.
 func TestOIDCStart_ServiceErrorReturnsNonRedirect(t *testing.T) {
 	us := &stubOIDCStartUserService{
-		getOIDCAuthorizationURL: func(context.Context, string) (*types.OIDCAuthURLResponse, error) {
+		getOIDCAuthorizationURL: func(context.Context, string, string) (*types.OIDCAuthURLResponse, error) {
 			return nil, fmt.Errorf("idp unavailable")
 		},
 	}

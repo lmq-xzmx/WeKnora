@@ -23,6 +23,11 @@ type TenantMemberService interface {
 	// Owner of the tenant their account just created.
 	EnsureOwner(ctx context.Context, userID string, tenantID uint64) (*types.TenantMember, error)
 
+	// EnsureMember is like EnsureOwner but creates a Member role instead.
+	// Used by Plan D OIDC routing when provisioning a new OIDC user into
+	// an existing tenant.
+	EnsureMember(ctx context.Context, userID string, tenantID uint64) (*types.TenantMember, error)
+
 	// GetMembership returns the active (user, tenant) membership, or
 	// (nil, nil) if no such row exists.
 	GetMembership(ctx context.Context, userID string, tenantID uint64) (*types.TenantMember, error)

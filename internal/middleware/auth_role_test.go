@@ -138,6 +138,9 @@ func (f *fakeMemberService) UpdateRole(
 func (f *fakeMemberService) RemoveMember(ctx context.Context, userID string, tenantID uint64) error {
 	return nil
 }
+func (f *fakeMemberService) EnsureMember(ctx context.Context, userID string, tenantID uint64) (*types.TenantMember, error) {
+	return nil, nil
+}
 
 var _ interfaces.TenantMemberService = (*fakeMemberService)(nil)
 

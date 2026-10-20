@@ -198,6 +198,12 @@ type RegisterRequest struct {
 	// own tenancy semantics. Empty preserves the historical behaviour and is
 	// treated as create_personal by UserService.Register.
 	TenantProvisioning TenantProvisioningMode `json:"-"`
+
+	// ExistingTenantID is used by Plan D (multi-tenant OIDC routing) to
+	// provision a new OIDC user into an existing tenant resolved from the
+	// domain mapping, instead of creating a new personal tenant.
+	// When > 0, the user is created under this tenant directly.
+	ExistingTenantID uint64 `json:"-"`
 }
 
 // AdminCreateUserRequest is the payload for a SystemAdmin provisioning a

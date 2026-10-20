@@ -12,14 +12,21 @@ type UserService interface {
 	Register(ctx context.Context, req *types.RegisterRequest) (*types.User, error)
 	// Login authenticates a user and returns tokens
 	Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error)
-	// GetOIDCAuthorizationURL builds the third-party OIDC authorization URL
-	GetOIDCAuthorizationURL(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error)
+	// GetOIDCAuthorizationURL builds the third-party OIDC authorization URL.
+	// host is used for Plan D multi-tenant OIDC routing; if a tenant-specific OIDC
+	// config exists for that domain, it overrides the global config.
+	GetOIDCAuthorizationURL(ctx context.Context, redirectURI, host string) (*types.OIDCAuthURLResponse, error)
 	// LoginWithOIDC exchanges the callback code, auto-provisions users if needed, and completes login.
 	// provisioning is the default tenant mode for a newly auto-created user
 	// (resolved by the caller from auth.default_tenant_mode).
-	LoginWithOIDC(ctx context.Context, code, redirectURI string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+	// host and tenantID are used for Plan D multi-tenant OIDC routing.
+	LoginWithOIDC(ctx context.Context, code, redirectURI string, provisioning types.TenantProvisioningMode, host string, tenantID uint64) (*types.OIDCCallbackResponse, error)
 	// GetUserByID gets a user by ID
 	GetUserByID(ctx context.Context, id string) (*types.User, error)
+	// ValidateCasdoorToken validates a Casdoor-issued JWT (RS256) and returns the user.
+	// Used for Plan B (Casdoor JWT 方式) where clients present a Casdoor JWT directly.
+	// Returns (nil, 0, error) if the token is invalid or not a Casdoor JWT.
+	ValidateCasdoorToken(ctx context.Context, token string) (*types.User, uint64, error)
 	// GetUsersByIDs batch-fetches users by id, returning a map keyed by
 	// user id. Missing ids are simply absent from the result; the call
 	// is not an error when some ids resolve to no row. Used on hot list

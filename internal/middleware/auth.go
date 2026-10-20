@@ -128,6 +128,7 @@ func Auth(
 	userService interfaces.UserService,
 	memberService interfaces.TenantMemberService,
 	apiKeyService interfaces.TenantAPIKeyService,
+	delegationTokenService interfaces.DelegationTokenService,
 	cfg *config.Config,
 ) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -147,6 +148,8 @@ func Auth(
 		bearerPresented := false
 		if token, ok := bearerToken(c); ok {
 			bearerPresented = true
+
+			// 1. 优先尝试 WeKnora JWT（HMAC 签发）
 			user, jwtTenantID, err := userService.ValidateToken(c.Request.Context(), token)
 			if err == nil && user != nil {
 				if authenticateJWTUser(c, tenantService, memberService, cfg, user, jwtTenantID) {
@@ -154,7 +157,38 @@ func Auth(
 				}
 				return
 			}
+
+			// 2. WeKnora JWT 失败，尝试 Casdoor JWT（RS256 签发，Plan B）
+			// 仅当 OIDC 已启用时才尝试
+			if cfg != nil && cfg.OIDCAuth != nil && cfg.OIDCAuth.Enable {
+				casdoorUser, casdoorTenantID, casdoorErr := userService.ValidateCasdoorToken(c.Request.Context(), token)
+				if casdoorErr == nil && casdoorUser != nil {
+					if authenticateJWTUser(c, tenantService, memberService, cfg, casdoorUser, casdoorTenantID) {
+						c.Next()
+					}
+					return
+				}
+				if casdoorErr != nil {
+					logger.Warnf(c.Request.Context(), "[auth] Casdoor JWT rejected: %v", casdoorErr)
+				}
+			}
+
 			logger.Warnf(c.Request.Context(), "[auth] bearer token rejected: %v", err)
+
+			// 3. 如果上面两条路都没走通，尝试 Delegation Token（Bearer token 格式，租户签发的临时凭证）
+			// 注意：Delegation Token 和 JWT 使用相同的 Bearer token 位置，互斥尝试
+			if delegationTokenService != nil {
+				dt, dtErr := delegationTokenService.ValidateToken(c.Request.Context(), token)
+				if dtErr == nil && dt != nil && dt.IsValid() {
+					if authenticateDelegationToken(c, tenantService, dt) {
+						c.Next()
+					}
+					return
+				}
+				if dtErr != nil {
+					logger.Warnf(c.Request.Context(), "[auth] delegation token rejected: %v", dtErr)
+				}
+			}
 		}
 
 		// 尝试X-API-Key认证（兼容模式）
@@ -385,6 +419,24 @@ func authenticateAPIKeyRequest(
 		return false
 	}
 
+	// Check IP allowlist if configured
+	if len(key.AllowedIPs) > 0 {
+		clientIP := c.ClientIP()
+		ipAllowed := false
+		for _, allowed := range key.AllowedIPs {
+			if allowed == clientIP {
+				ipAllowed = true
+				break
+			}
+		}
+		if !ipAllowed {
+			logger.Warnf(ctx, "[auth] API key IP rejected: key=%d client=%s allowed=%v", key.ID, clientIP, key.AllowedIPs)
+			c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden: client IP not allowed for this API key"})
+			c.Abort()
+			return false
+		}
+	}
+
 	if key.IsPlatform() {
 		tenantHeader := strings.TrimSpace(c.GetHeader("X-Tenant-ID"))
 		if tenantHeader == "" {
@@ -436,6 +488,69 @@ func authenticateAPIKeyRequest(
 	// Per-route API-key authorization (full access + capabilities + KB scope)
 	// is enforced by middleware.APIKeyRouteAuthorizer on the /api/v1 group.
 	// Key-management and any other undeclared route is denied there.
+	return true
+}
+
+// authenticateDelegationToken finishes authentication for a validated delegation token.
+// It resolves the tenant from the token's TenantID, attaches the delegation token scope,
+// and authorizes the request. Returns true when the request may proceed; on false the
+// response has already been written and the request aborted.
+func authenticateDelegationToken(
+	c *gin.Context,
+	tenantService interfaces.TenantService,
+	token *types.DelegationToken,
+) bool {
+	ctx := c.Request.Context()
+
+	// Resolve tenant from the token
+	tenant, err := tenantService.GetTenantByID(ctx, token.TenantID)
+	if err != nil || tenant == nil {
+		logger.Warnf(ctx, "[auth] delegation token tenant lookup failed: tenant=%d err=%v", token.TenantID, err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid delegation token"})
+		c.Abort()
+		return false
+	}
+
+	// Check IP allowlist if configured
+	if len(token.AllowedIPs) > 0 {
+		clientIP := c.ClientIP()
+		ipAllowed := false
+		for _, allowed := range token.AllowedIPs {
+			if allowed == clientIP {
+				ipAllowed = true
+				break
+			}
+		}
+		if !ipAllowed {
+			logger.Warnf(ctx, "[auth] delegation token IP rejected: token=%d client=%s allowed=%v", token.ID, clientIP, token.AllowedIPs)
+			c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden: client IP not allowed"})
+			c.Abort()
+			return false
+		}
+	}
+
+	// Build synthetic user for the delegation token (not a real WeKnora user)
+	syntheticUser := &types.User{
+		ID:       fmt.Sprintf("delegation-token-%d", token.ID),
+		Username: fmt.Sprintf("delegation-token-%d", token.ID),
+		Email:    fmt.Sprintf("delegation-token-%d@delegation.local", token.ID),
+		TenantID: token.TenantID,
+		IsActive: true,
+	}
+
+	applyAuthSession(c, authSession{
+		User:       syntheticUser,
+		Principal:  types.Principal{Type: types.PrincipalDelegationToken, ID: fmt.Sprintf("%d", token.ID)},
+		TenantID:  token.TenantID,
+		Tenant:    tenant,
+		Role:      types.TenantRoleViewer, // Delegation tokens get minimal viewer role; scope check is per-route
+		DelegationTokenScope: &types.DelegationTokenScope{
+			TokenID:  token.ID,
+			Name:     token.Name,
+			TenantID: token.TenantID,
+			Scopes:   token.Scopes,
+		},
+	})
 	return true
 }
 

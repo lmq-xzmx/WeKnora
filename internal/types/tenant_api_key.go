@@ -30,6 +30,8 @@ type TenantAPIKey struct {
 	// (KnowledgeBaseIDs) still applies on top where a route targets knowledge
 	// bases.
 	Capabilities StringArray `json:"capabilities" gorm:"type:jsonb;not null;default:'[]'"`
+	// AllowedIPs restricts which client IPs can use this API key. Empty means all IPs allowed.
+	AllowedIPs StringArray `json:"allowed_ips" gorm:"type:jsonb;not null;default:'[]'"`
 	LastUsedAt   *time.Time  `json:"last_used_at,omitempty"`
 	ExpiresAt    *time.Time  `json:"expires_at,omitempty"`
 	RevokedAt    *time.Time  `json:"revoked_at,omitempty" gorm:"index"`
@@ -443,4 +445,21 @@ func FilterKnowledgeBasesForTenantAPIKeyScope(
 		}
 	}
 	return filtered, nil
+}
+
+// WithDelegationTokenScope stores a delegation token scope in the context.
+func WithDelegationTokenScope(ctx context.Context, scope DelegationTokenScope) context.Context {
+	return context.WithValue(ctx, DelegationTokenScopeContextKey, scope)
+}
+
+// DelegationTokenScopeFromContext retrieves a delegation token scope from the context.
+func DelegationTokenScopeFromContext(ctx context.Context) (DelegationTokenScope, bool) {
+	if ctx == nil {
+		return DelegationTokenScope{}, false
+	}
+	scope, ok := ctx.Value(DelegationTokenScopeContextKey).(DelegationTokenScope)
+	if !ok {
+		return DelegationTokenScope{}, false
+	}
+	return scope, true
 }

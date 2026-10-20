@@ -32,6 +32,9 @@ type authSession struct {
 	// APIKeyScope marks machine principals; the APIKeyGate authorizes them
 	// per-route from this scope.
 	APIKeyScope *types.TenantAPIKeyScope
+	// DelegationTokenScope marks third-party system principals authenticated
+	// by a tenant-issued delegation token.
+	DelegationTokenScope *types.DelegationTokenScope
 	// Extra carries surface-specific context values (e.g. the authenticated
 	// embed channel) that must be visible on both surfaces like the rest.
 	Extra map[types.ContextKey]any
@@ -72,6 +75,9 @@ func applyAuthSession(c *gin.Context, s authSession) {
 	set(types.SystemAdminContextKey, s.SystemAdmin)
 	if s.APIKeyScope != nil {
 		ctx = types.WithTenantAPIKeyScope(ctx, *s.APIKeyScope)
+	}
+	if s.DelegationTokenScope != nil {
+		ctx = types.WithDelegationTokenScope(ctx, *s.DelegationTokenScope)
 	}
 	for key, v := range s.Extra {
 		set(key, v)

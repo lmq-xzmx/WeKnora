@@ -88,6 +88,8 @@ func TestPlatformTenantLifecycleRoutesDeclarePlatformCapabilities(t *testing.T) 
 		&handler.TenantMemberHandler{},
 		&handler.TenantInvitationHandler{},
 		nil,
+		nil,
+		nil,
 		g,
 	)
 
@@ -335,7 +337,7 @@ func TestTenantInfrastructureRoutesDeclareSpecificCapabilities(t *testing.T) {
 	g := &rbacGuards{}
 	v1 := gin.New().Group("/api/v1")
 
-	RegisterTenantRoutes(v1, &handler.TenantHandler{}, nil, nil, nil, g)
+	RegisterTenantRoutes(v1, &handler.TenantHandler{}, nil, nil, nil, nil, nil, g)
 	RegisterModelRoutes(v1, &handler.ModelHandler{}, &handler.ModelCredentialsHandler{}, g)
 	RegisterEvaluationRoutes(v1, &handler.EvaluationHandler{}, g)
 	RegisterSystemRoutes(v1, &handler.SystemHandler{}, g)
@@ -471,7 +473,7 @@ func TestTenantMemberRoutesDeclareManageMembersCapability(t *testing.T) {
 	g := &rbacGuards{}
 	v1 := gin.New().Group("/api/v1")
 
-	RegisterTenantRoutes(v1, &handler.TenantHandler{}, &handler.TenantMemberHandler{}, &handler.TenantInvitationHandler{}, nil, g)
+	RegisterTenantRoutes(v1, &handler.TenantHandler{}, &handler.TenantMemberHandler{}, &handler.TenantInvitationHandler{}, nil, nil, nil, g)
 
 	cases := []struct {
 		method string

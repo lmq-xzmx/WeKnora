@@ -69,6 +69,7 @@ type TenantAPIKeyCreateRequest struct {
 	FullAccess       bool
 	KnowledgeBaseIDs []string
 	Capabilities     []string
+	AllowedIPs       []string
 	ExpiresAt        *time.Time
 }
 
@@ -86,6 +87,7 @@ type TenantAPIKeyUpdateRequest struct {
 	FullAccess       bool
 	KnowledgeBaseIDs []string
 	Capabilities     []string
+	AllowedIPs       []string
 	ExpiresAt        *time.Time
 }
 
@@ -120,4 +122,33 @@ type TenantAPIKeyService interface {
 	// for legacy keys still carrying the migration placeholder.
 	// Returns the number of keys backfilled.
 	BackfillMissingKeyHashes(ctx context.Context) (int, error)
+}
+
+// TenantDomainRepository defines the data access interface for tenant domain mapping (Plan D)
+type TenantDomainRepository interface {
+	// GetByDomain returns the tenant domain mapping for the given domain.
+	// Returns nil if not found.
+	GetByDomain(ctx context.Context, domain string) (*types.TenantDomain, error)
+	// Create creates a new tenant domain mapping.
+	Create(ctx context.Context, td *types.TenantDomain) error
+	// Delete deletes a tenant domain mapping.
+	Delete(ctx context.Context, id uint64) error
+	// ListByTenantID lists all domain mappings for a tenant.
+	ListByTenantID(ctx context.Context, tenantID uint64) ([]*types.TenantDomain, error)
+}
+
+// TenantDomainService defines the business logic interface for tenant domain mapping (Plan D)
+type TenantDomainService interface {
+	// GetTenantByDomain returns the tenant for the given domain.
+	// Returns nil if no domain mapping exists (falls back to global/default tenant).
+	GetTenantByDomain(ctx context.Context, domain string) (*types.Tenant, error)
+	// GetOIDCConfigByDomain returns the OIDC config for the given domain.
+	// Returns nil if no tenant-specific OIDC config is found (caller should use global config).
+	GetOIDCConfigByDomain(ctx context.Context, domain string) (*types.TenantOIDCConfig, error)
+	// Create creates a new tenant domain mapping.
+	Create(ctx context.Context, td *types.TenantDomain) error
+	// Delete deletes a tenant domain mapping by ID.
+	Delete(ctx context.Context, id uint64) error
+	// ListByTenantID lists all domain mappings for a tenant.
+	ListByTenantID(ctx context.Context, tenantID uint64) ([]*types.TenantDomain, error)
 }

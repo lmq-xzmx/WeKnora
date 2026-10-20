@@ -120,6 +120,8 @@ type Tenant struct {
 	MemoryConfig *MemoryConfig `yaml:"memory_config" json:"memory_config" gorm:"type:jsonb"`
 	// API principal config: controls how X-API-Key requests map to terminal principals.
 	APIPrincipalConfig *APIPrincipalConfig `yaml:"api_principal_config" json:"-" gorm:"type:jsonb"`
+	// OIDC config: per-tenant OIDC configuration for multi-tenant OIDC routing (Plan D)
+	OIDCConfig *TenantOIDCConfig `yaml:"oidc_config" json:"oidc_config" gorm:"type:text"`
 	// Creation time
 	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`
 	// Last updated time
@@ -966,5 +968,88 @@ func (c *TenantSandboxConfig) Scan(value interface{}) error {
 		})
 	}
 
+	return nil
+}
+
+// ============================================================
+// 方案 D：多租户域名路由（TenantDomain）
+// ============================================================
+
+// TenantDomain 租户域名映射表
+type TenantDomain struct {
+	ID        uint64    `json:"id" gorm:"primaryKey"`
+	TenantID  uint64    `json:"tenant_id" gorm:"not null;index"`
+	Domain    string    `json:"domain" gorm:"uniqueIndex;not null"` // 如 "a.company-a.com"
+	IsActive  bool      `json:"is_active" gorm:"default:true"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName 指定表名
+func (TenantDomain) TableName() string {
+	return "tenant_domains"
+}
+
+// ============================================================
+// 方案 D：租户级 OIDC 配置（TenantOIDCConfig）
+// Stored as JSONB/TEXT in Tenant.oidc_config column.
+// ============================================================
+
+// TenantOIDCConfig 租户级 OIDC 配置，覆盖全局配置
+type TenantOIDCConfig struct {
+	Enable                bool       `json:"enable"`
+	IssuerURL             string     `json:"issuer_url"`
+	DiscoveryURL          string     `json:"discovery_url"`
+	ClientID              string     `json:"client_id"`
+	ClientSecret          string     `json:"client_secret"` // 加密存储（AES-256-GCM）
+	AuthorizationEndpoint string     `json:"authorization_endpoint"`
+	TokenEndpoint         string     `json:"token_endpoint"`
+	UserInfoEndpoint      string     `json:"user_info_endpoint"`
+	JwksURI               string     `json:"jwks_uri"`
+	Scopes                []string   `json:"scopes"`
+	UserInfoMapping       *struct {
+		Username string `json:"username"`
+		Email    string `json:"email"`
+	} `json:"user_info_mapping"`
+}
+
+// Value 实现 driver.Valuer，支持 JSON 序列化
+func (c *TenantOIDCConfig) Value() (driver.Value, error) {
+	if c == nil {
+		return nil, nil
+	}
+	cp := *c
+	// ClientSecret 加密存储
+	if cp.ClientSecret != "" {
+		if key := utils.GetAESKey(); key != nil {
+			if encrypted, err := utils.EncryptAESGCM(cp.ClientSecret, key); err == nil {
+				cp.ClientSecret = encrypted
+			}
+		}
+	}
+	return json.Marshal(&cp)
+}
+
+// Scan 实现 sql.Scanner，支持 JSON 反序列化
+func (c *TenantOIDCConfig) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	if err := json.Unmarshal(b, c); err != nil {
+		return err
+	}
+	// 尝试解密 ClientSecret
+	if c != nil && c.ClientSecret != "" {
+		if plain, ok := utils.DecryptStoredSecretLenient(c.ClientSecret); ok {
+			c.ClientSecret = plain
+		} else {
+			log.Printf("[crypto] tenant_oidc_config.client_secret: decrypt failed (SYSTEM_AES_KEY missing/rotated?), treating as unconfigured")
+			c.ClientSecret = ""
+		}
+	}
 	return nil
 }

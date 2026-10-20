@@ -140,6 +140,7 @@ type tenantAPIKeyCreateRequest struct {
 	FullAccess       bool     `json:"full_access"`
 	KnowledgeBaseIDs []string `json:"knowledge_base_ids"`
 	Capabilities     []string `json:"capabilities"`
+	AllowedIPs       []string `json:"allowed_ips"`
 	ExpiresAt        *int64   `json:"expires_at_unix"`
 }
 
@@ -149,6 +150,7 @@ type tenantAPIKeyUpdateRequest struct {
 	FullAccess       bool     `json:"full_access"`
 	KnowledgeBaseIDs []string `json:"knowledge_base_ids"`
 	Capabilities     []string `json:"capabilities"`
+	AllowedIPs       []string `json:"allowed_ips"`
 	ExpiresAt        *int64   `json:"expires_at_unix"`
 }
 
@@ -160,6 +162,7 @@ type tenantAPIKeyResponse struct {
 	FullAccess       bool                  `json:"full_access"`
 	KnowledgeBaseIDs types.StringArray     `json:"knowledge_base_ids"`
 	Capabilities     types.StringArray     `json:"capabilities"`
+	AllowedIPs       types.StringArray     `json:"allowed_ips"`
 	LastUsedAt       *time.Time            `json:"last_used_at,omitempty"`
 	ExpiresAt        *time.Time            `json:"expires_at,omitempty"`
 	CreatedAt        time.Time             `json:"created_at"`
@@ -707,6 +710,7 @@ func (h *TenantHandler) CreateAPIKey(c *gin.Context) {
 		FullAccess:       req.FullAccess,
 		KnowledgeBaseIDs: req.KnowledgeBaseIDs,
 		Capabilities:     req.Capabilities,
+		AllowedIPs:       req.AllowedIPs,
 		ExpiresAt:        expiresAt,
 	})
 	if err != nil {
@@ -753,7 +757,7 @@ func (h *TenantHandler) UpdateAPIKey(c *gin.Context) {
 
 	updated, err := h.apiKeyService.UpdateAPIKey(ctx, interfaces.TenantAPIKeyUpdateRequest{
 		TenantID: tenantID, APIKeyID: keyID, Name: req.Name, FullAccess: req.FullAccess,
-		KnowledgeBaseIDs: req.KnowledgeBaseIDs, Capabilities: req.Capabilities, ExpiresAt: expiresAt,
+		KnowledgeBaseIDs: req.KnowledgeBaseIDs, Capabilities: req.Capabilities, AllowedIPs: req.AllowedIPs, ExpiresAt: expiresAt,
 	})
 	if err != nil {
 		c.Error(errors.NewNotFoundError("API key not found"))
@@ -793,6 +797,7 @@ func tenantAPIKeyForResponse(key *types.TenantAPIKey) tenantAPIKeyResponse {
 		FullAccess:       key.FullAccess,
 		KnowledgeBaseIDs: key.KnowledgeBaseIDs,
 		Capabilities:     types.NormalizeAPIKeyCapabilities(key.Capabilities),
+		AllowedIPs:       key.AllowedIPs,
 		LastUsedAt:       key.LastUsedAt,
 		ExpiresAt:        key.ExpiresAt,
 		CreatedAt:        key.CreatedAt,

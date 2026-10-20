@@ -325,7 +325,8 @@ func (h *AuthHandler) GetOIDCAuthorizationURL(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.userService.GetOIDCAuthorizationURL(ctx, redirectURI)
+	// Pass the request host for Plan D multi-tenant OIDC routing
+	resp, err := h.userService.GetOIDCAuthorizationURL(ctx, redirectURI, c.Request.Host)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to generate OIDC authorization URL: %v", err)
 		appErr := errors.NewForbiddenError("OIDC authorization unavailable").WithDetails(err.Error())
@@ -373,7 +374,8 @@ func oidcCallbackURL(c *gin.Context) string {
 // @Router       /auth/oidc/start [get]
 func (h *AuthHandler) OIDCStart(c *gin.Context) {
 	ctx := c.Request.Context()
-	resp, err := h.userService.GetOIDCAuthorizationURL(ctx, oidcCallbackURL(c))
+	// Pass the request host for Plan D multi-tenant OIDC routing
+	resp, err := h.userService.GetOIDCAuthorizationURL(ctx, oidcCallbackURL(c), c.Request.Host)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to generate OIDC authorization URL: %v", err)
 		appErr := errors.NewForbiddenError("OIDC authorization unavailable").WithDetails(err.Error())
@@ -448,7 +450,7 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.userService.LoginWithOIDC(ctx, code, strings.TrimSpace(decodedState.RedirectURI), h.resolveDefaultTenantMode(ctx))
+	resp, err := h.userService.LoginWithOIDC(ctx, code, strings.TrimSpace(decodedState.RedirectURI), h.resolveDefaultTenantMode(ctx), c.Request.Host, decodedState.TenantID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to complete OIDC login via redirect callback: %v", err)
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(err.Error()))
@@ -480,6 +482,7 @@ func encodeOIDCCallbackPayload(resp *types.OIDCCallbackResponse) (string, error)
 type oidcStatePayload struct {
 	Nonce       string
 	RedirectURI string
+	TenantID    uint64
 }
 
 func decodeOIDCState(raw string, req *http.Request) (*oidcStatePayload, error) {
@@ -497,6 +500,7 @@ func decodeOIDCState(raw string, req *http.Request) (*oidcStatePayload, error) {
 	return &oidcStatePayload{
 		Nonce:       payload.Nonce,
 		RedirectURI: strings.TrimSpace(payload.RedirectURI),
+		TenantID:    payload.TenantID,
 	}, nil
 }
 

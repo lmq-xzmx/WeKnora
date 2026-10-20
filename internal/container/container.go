@@ -229,6 +229,12 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	logger.Debugf(ctx, "[Container] Registering business services...")
 	must(container.Provide(service.NewTenantService))
 	must(container.Provide(service.NewTenantAPIKeyService))
+	// Plan D: TenantDomain for multi-tenant OIDC domain routing
+	must(container.Provide(repository.NewTenantDomainRepository))
+	must(container.Provide(service.NewTenantDomainService))
+	// Delegation Token for tenant-to-third-party authorization
+	must(container.Provide(repository.NewDelegationTokenRepository))
+	must(container.Provide(service.NewDelegationTokenService))
 	must(container.Provide(service.NewTenantMemberService))
 	must(container.Provide(service.NewTenantInvitationService))
 	must(container.Provide(service.NewAuditLogService))
@@ -530,6 +536,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewTenantHandler))
 	must(container.Provide(handler.NewTenantMemberHandler))
 	must(container.Provide(handler.NewTenantInvitationHandler))
+	must(container.Provide(handler.NewTenantDomainHandler))
+	must(container.Provide(handler.NewDelegationTokenHandler))
 	must(container.Provide(handler.NewAuditLogHandler))
 	must(container.Provide(handler.NewKnowledgeBaseHandler))
 	must(container.Provide(handler.NewKnowledgeHandler))

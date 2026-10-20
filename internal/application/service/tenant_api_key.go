@@ -71,6 +71,7 @@ func (s *tenantAPIKeyService) CreateAPIKey(
 		FullAccess:       req.FullAccess,
 		KnowledgeBaseIDs: normalizeAPIKeyIDs(req.KnowledgeBaseIDs),
 		Capabilities:     capabilities,
+		AllowedIPs:       normalizeAPIKeyIDs(req.AllowedIPs),
 		ExpiresAt:        expiresAt,
 	}
 	if key.FullAccess {
@@ -159,6 +160,7 @@ func (s *tenantAPIKeyService) UpdateAPIKey(
 		FullAccess:       req.FullAccess,
 		KnowledgeBaseIDs: normalizeAPIKeyIDs(req.KnowledgeBaseIDs),
 		Capabilities:     capabilities,
+		AllowedIPs:       normalizeAPIKeyIDs(req.AllowedIPs),
 		ExpiresAt:        expiresAt,
 	}
 	if key.FullAccess {

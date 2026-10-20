@@ -104,6 +104,9 @@ type userService struct {
 	memberService    interfaces.TenantMemberService
 	config           *config.Config
 	systemSettingSvc interfaces.SystemSettingService
+	// tenantDomainSvc is used for Plan D multi-tenant OIDC domain routing.
+	// When nil, falls back to global OIDC config (Plan C behavior).
+	tenantDomainSvc interfaces.TenantDomainService
 }
 
 // NewUserService creates a new user service instance
@@ -114,6 +117,7 @@ func NewUserService(
 	tenantService interfaces.TenantService,
 	memberService interfaces.TenantMemberService,
 	systemSettingSvc interfaces.SystemSettingService,
+	tenantDomainSvc interfaces.TenantDomainService,
 ) interfaces.UserService {
 	return &userService{
 		userRepo:         userRepo,
@@ -122,6 +126,7 @@ func NewUserService(
 		memberService:    memberService,
 		config:           configInfo,
 		systemSettingSvc: systemSettingSvc,
+		tenantDomainSvc:  tenantDomainSvc,
 	}
 }
 
@@ -165,7 +170,15 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	}
 
 	var createdTenant *types.Tenant
-	if provisioning == types.TenantProvisioningCreatePersonal {
+	// Plan D: if ExistingTenantID is provided, join that existing tenant directly.
+	// Otherwise fall back to the normal provisioning mode logic.
+	if req.ExistingTenantID > 0 {
+		existingTenant, terr := s.tenantService.GetTenantByID(ctx, req.ExistingTenantID)
+		if terr != nil || existingTenant == nil {
+			return nil, errors.New("target tenant not found")
+		}
+		createdTenant = existingTenant
+	} else if provisioning == types.TenantProvisioningCreatePersonal {
 		// Note: RetrieverEngines is left empty - system will use defaults
 		// from RETRIEVE_DRIVER env.
 		tenant := &types.Tenant{
@@ -199,7 +212,8 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	err = s.userRepo.CreateUser(ctx, user)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create user: %v", err)
-		if createdTenant != nil {
+		// Only roll back tenant creation if we created a new one (not for ExistingTenantID)
+		if createdTenant != nil && req.ExistingTenantID == 0 {
 			if rollbackErr := s.tenantService.DeleteTenant(ctx, createdTenant.ID); rollbackErr != nil {
 				logger.Errorf(ctx, "Failed to roll back tenant %d after user creation failure: %v", createdTenant.ID, rollbackErr)
 			}
@@ -207,17 +221,31 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		return nil, errors.New("failed to create user")
 	}
 
-	// Bootstrap an Owner membership so the registrant has full control over
-	// the tenant their account just created. Failure here only logs — the
-	// user record exists and the auth middleware's orphan-tenant recovery
-	// path will recreate the membership on next login.
+	// Bootstrap membership: Owner for new tenant, Member for Plan D (existing tenant).
+	// Failure here only logs — the user record exists and the auth middleware's
+	// orphan-tenant recovery path will recreate the membership on next login.
 	if createdTenant != nil && s.memberService != nil {
-		if _, err := s.memberService.EnsureOwner(ctx, user.ID, createdTenant.ID); err != nil {
-			logger.Errorf(ctx, "Failed to create owner membership for user %s tenant %d: %v",
-				user.ID, createdTenant.ID, err)
+		var memErr error
+		if req.ExistingTenantID > 0 {
+			// Plan D: user joins an existing tenant as a Member
+			_, memErr = s.memberService.EnsureMember(ctx, user.ID, createdTenant.ID)
+		} else {
+			// Normal: user creates a new personal tenant as Owner
+			_, memErr = s.memberService.EnsureOwner(ctx, user.ID, createdTenant.ID)
+		}
+		if memErr != nil {
+			role := "owner"
+			if req.ExistingTenantID > 0 {
+				role = "member"
+			}
+			logger.Errorf(ctx, "Failed to create %s membership for user %s tenant %d: %v",
+				role, user.ID, createdTenant.ID, memErr)
 			_ = s.userRepo.DeleteUser(ctx, user.ID)
-			_ = s.tenantService.DeleteTenant(ctx, createdTenant.ID)
-			return nil, errors.New("failed to finalise workspace ownership")
+			// Only roll back tenant if we created it (not for Plan D existing tenant)
+			if req.ExistingTenantID == 0 {
+				_ = s.tenantService.DeleteTenant(ctx, createdTenant.ID)
+			}
+			return nil, errors.New("failed to finalise workspace membership")
 		}
 	}
 
@@ -433,8 +461,12 @@ func synthFallbackMembership(user *types.User, activeTenant *types.Tenant) []typ
 }
 
 // GetOIDCAuthorizationURL builds the OIDC authorization URL.
-func (s *userService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error) {
-	cfg, err := s.getOIDCConfig(ctx)
+// The host parameter is used for Plan D multi-tenant OIDC routing.
+// If host is provided and a tenant-specific OIDC config exists for that domain,
+// the tenant-specific config overrides the global config.
+// If host is empty, falls back to global OIDC config (Plan C behavior).
+func (s *userService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI, host string) (*types.OIDCAuthURLResponse, error) {
+	cfg, err := s.getOIDCConfigByHost(ctx, host)
 	if err != nil {
 		return nil, err
 	}
@@ -447,9 +479,19 @@ func (s *userService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI s
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
 
+	// Resolve tenant ID for Plan D (embedded in state for callback)
+	var tenantID uint64
+	if s.tenantDomainSvc != nil && host != "" {
+		tenant, err := s.tenantDomainSvc.GetTenantByDomain(ctx, host)
+		if err == nil && tenant != nil {
+			tenantID = tenant.ID
+		}
+	}
+
 	state, err := secutils.SignOIDCState(&secutils.OIDCStatePayload{
 		Nonce:       nonce,
 		RedirectURI: strings.TrimSpace(redirectURI),
+		TenantID:    tenantID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode OIDC state: %w", err)
@@ -479,13 +521,17 @@ func (s *userService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI s
 }
 
 // LoginWithOIDC exchanges code for tokens, loads user info, provisions user if
-// needed, and returns local login tokens. provisioning is the default tenant
-// mode applied only when a brand-new local user is auto-created; it is resolved
-// by the caller from the shared auth.default_tenant_mode policy.
+// needed, and returns local login tokens.
+// provisioning is the default tenant mode applied only when a brand-new local user
+// is auto-created; it is resolved by the caller from the shared auth.default_tenant_mode policy.
+// host is used for Plan D multi-tenant OIDC routing; if a tenant-specific OIDC config
+// exists for the domain, it overrides the global config.
 func (s *userService) LoginWithOIDC(
 	ctx context.Context,
 	code, redirectURI string,
 	provisioning types.TenantProvisioningMode,
+	host string,
+	tenantIDFromState uint64,
 ) (*types.OIDCCallbackResponse, error) {
 	if strings.TrimSpace(code) == "" {
 		return nil, errors.New("code is required")
@@ -494,7 +540,7 @@ func (s *userService) LoginWithOIDC(
 		return nil, errors.New("redirect_uri is required")
 	}
 
-	cfg, err := s.getOIDCConfig(ctx)
+	cfg, err := s.getOIDCConfigByHost(ctx, host)
 	if err != nil {
 		return nil, err
 	}
@@ -512,13 +558,22 @@ func (s *userService) LoginWithOIDC(
 		return nil, errors.New("OIDC provider did not return email")
 	}
 
+	// Plan D: resolve target tenant ID from state or domain
+	resolvedTenantID := tenantIDFromState
+	if resolvedTenantID == 0 && host != "" && s.tenantDomainSvc != nil {
+		tenant, terr := s.tenantDomainSvc.GetTenantByDomain(ctx, host)
+		if terr == nil && tenant != nil {
+			resolvedTenantID = tenant.ID
+		}
+	}
+
 	user, err := s.userRepo.GetUserByEmail(ctx, userInfo.Email)
 	if err != nil && !isUserLookupNotFound(err) {
 		return nil, fmt.Errorf("failed to query user by email: %w", err)
 	}
 	isNewUser := false
 	if isUserLookupNotFound(err) || user == nil {
-		user, err = s.provisionOIDCUser(ctx, userInfo, provisioning)
+		user, err = s.provisionOIDCUser(ctx, userInfo, provisioning, resolvedTenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -531,8 +586,8 @@ func (s *userService) LoginWithOIDC(
 
 	// Resolve target tenant once so the JWT claim and the tenant we
 	// return below stay in sync; see Login for the rationale.
-	resolvedTenantID := s.resolveLoginTenantID(ctx, user)
-	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, resolvedTenantID)
+	finalTenantID := s.resolveLoginTenantID(ctx, user)
+	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, finalTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate local tokens: %w", err)
 	}
@@ -540,12 +595,12 @@ func (s *userService) LoginWithOIDC(
 	// 拉取 tenant + memberships，让 OIDC 登录的返回结构与本地登录一致，
 	// 前端无须为 OIDC 单独走一次 /auth/me 才能拿到角色。
 	var tenant *types.Tenant
-	if resolvedTenantID > 0 {
-		if t, terr := s.tenantService.GetTenantByID(ctx, resolvedTenantID); terr == nil {
+	if finalTenantID > 0 {
+		if t, terr := s.tenantService.GetTenantByID(ctx, finalTenantID); terr == nil {
 			tenant = t
 		} else {
 			logger.Warnf(ctx, "OIDC login: failed to load tenant %d for user %s: %v",
-				resolvedTenantID, user.ID, terr)
+				finalTenantID, user.ID, terr)
 		}
 	}
 	memberships := s.buildMembershipsForUser(ctx, user, tenant)
@@ -1516,11 +1571,61 @@ func validateOIDCEndpoints(cfg *config.OIDCAuthConfig) error {
 	return nil
 }
 
+// getOIDCConfig returns the global OIDC config (existing behavior).
 func (s *userService) getOIDCConfig(ctx context.Context) (*config.OIDCAuthConfig, error) {
+	return s.getOIDCConfigByHost(ctx, "")
+}
+
+// getOIDCConfigByHost returns the OIDC config for the given host/domain.
+// If a tenant-specific OIDC config exists for the domain (Plan D), it overrides the global config.
+// If domain is empty or no tenant-specific config is found, returns the global config.
+func (s *userService) getOIDCConfigByHost(ctx context.Context, host string) (*config.OIDCAuthConfig, error) {
 	if s.config == nil || s.config.OIDCAuth == nil || !s.config.OIDCAuth.Enable {
 		return nil, errors.New("OIDC login is disabled")
 	}
 	cfg := *s.config.OIDCAuth
+
+	// Plan D: check for tenant-specific OIDC config override
+	if host != "" && s.tenantDomainSvc != nil {
+		tenantCfg, err := s.tenantDomainSvc.GetOIDCConfigByDomain(ctx, host)
+		if err == nil && tenantCfg != nil && tenantCfg.Enable {
+			// Merge tenant-specific config into global config
+			if tenantCfg.IssuerURL != "" {
+				cfg.IssuerURL = tenantCfg.IssuerURL
+			}
+			if tenantCfg.DiscoveryURL != "" {
+				cfg.DiscoveryURL = tenantCfg.DiscoveryURL
+			}
+			if tenantCfg.ClientID != "" {
+				cfg.ClientID = tenantCfg.ClientID
+			}
+			if tenantCfg.ClientSecret != "" {
+				cfg.ClientSecret = tenantCfg.ClientSecret
+			}
+			if tenantCfg.AuthorizationEndpoint != "" {
+				cfg.AuthorizationEndpoint = tenantCfg.AuthorizationEndpoint
+			}
+			if tenantCfg.TokenEndpoint != "" {
+				cfg.TokenEndpoint = tenantCfg.TokenEndpoint
+			}
+			if tenantCfg.UserInfoEndpoint != "" {
+				cfg.UserInfoEndpoint = tenantCfg.UserInfoEndpoint
+			}
+			if tenantCfg.JwksURI != "" {
+				cfg.JwksURI = tenantCfg.JwksURI
+			}
+			if len(tenantCfg.Scopes) > 0 {
+				cfg.Scopes = tenantCfg.Scopes
+			}
+			if tenantCfg.UserInfoMapping != nil {
+				cfg.UserInfoMapping = &config.OIDCUserInfoMapping{
+					Username: tenantCfg.UserInfoMapping.Username,
+					Email:    tenantCfg.UserInfoMapping.Email,
+				}
+			}
+		}
+	}
+
 	if cfg.UserInfoMapping == nil {
 		cfg.UserInfoMapping = &config.OIDCUserInfoMapping{Username: "name", Email: "email"}
 	}
@@ -1731,6 +1836,7 @@ func (s *userService) provisionOIDCUser(
 	ctx context.Context,
 	info *types.OIDCUserInfo,
 	provisioning types.TenantProvisioningMode,
+	existingTenantID uint64,
 ) (*types.User, error) {
 	username := s.generateOIDCUsername(ctx, info)
 	randomPassword, err := generateRandomString(32)
@@ -1743,6 +1849,7 @@ func (s *userService) provisionOIDCUser(
 		Email:              info.Email,
 		Password:           randomPassword,
 		TenantProvisioning: provisioning,
+		ExistingTenantID:   existingTenantID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to auto-provision OIDC user: %w", err)
@@ -1956,6 +2063,233 @@ func (jwks *oidcJWKS) rsaKeyForKid(kid string) (*rsa.PublicKey, error) {
 		return nil, errors.New("id_token missing kid and JWKS contains multiple RSA signing keys")
 	}
 	return usable[0].rsaPublicKey()
+}
+
+// ============================================================
+// Casdoor JWT 直接验证（方式 B：客户端直接用 Casdoor JWT 访问 API）
+// ============================================================
+
+// casdoorJWKSCache 缓存 Casdoor JWKS，避免每次验证都请求 Casdoor
+type casdoorJWKSCache struct {
+	mu        sync.RWMutex
+	keys      map[string]*rsa.PublicKey
+	expiresAt time.Time
+	jwksURI  string
+}
+
+var casdoorJWKSCacheInstance = &casdoorJWKSCache{}
+
+// GetPublicKey returns the RSA public key for the given kid.
+// If the cached JWKS has expired, it refetches from Casdoor.
+func (c *casdoorJWKSCache) GetPublicKey(kid string) (*rsa.PublicKey, error) {
+	c.mu.RLock()
+	if time.Now().Before(c.expiresAt) {
+		if key, ok := c.keys[kid]; ok {
+			c.mu.RUnlock()
+			return key, nil
+		}
+	}
+	c.mu.RUnlock()
+	if err := c.fetch(); err != nil {
+		return nil, err
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if key, ok := c.keys[kid]; ok {
+		return key, nil
+	}
+	return nil, fmt.Errorf("key %q not found in JWKS", kid)
+}
+
+func (c *casdoorJWKSCache) fetch() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Re-check after acquiring write lock (another goroutine may have fetched)
+	if time.Now().Before(c.expiresAt) && len(c.keys) > 0 {
+		return nil
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.jwksURI, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create JWKS request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := newOIDCHTTPClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch JWKS: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("JWKS request failed: status=%d", resp.StatusCode)
+	}
+	var jwks struct {
+		Keys []struct {
+			Kid string `json:"kid"`
+			Kty string `json:"kty"`
+			Alg string `json:"alg"`
+			Use string `json:"use"`
+			N   string `json:"n"`
+			E   string `json:"e"`
+		} `json:"keys"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&jwks); err != nil {
+		return fmt.Errorf("failed to decode JWKS: %w", err)
+	}
+	newKeys := make(map[string]*rsa.PublicKey)
+	for _, key := range jwks.Keys {
+		if !strings.EqualFold(key.Kty, "RSA") || (key.Use != "" && !strings.EqualFold(key.Use, "sig")) {
+			continue
+		}
+		pubKey, err := decodeJWKBase64(key.N)
+		if err != nil {
+			continue
+		}
+		eBytes, err := decodeJWKBase64(key.E)
+		if err != nil {
+			continue
+		}
+		eInt := new(big.Int).SetBytes(eBytes)
+		if !eInt.IsInt64() || eInt.Int64() <= 0 {
+			continue
+		}
+		rsaPub := &rsa.PublicKey{
+			N: new(big.Int).SetBytes(pubKey),
+			E: int(eInt.Int64()),
+		}
+		newKeys[key.Kid] = rsaPub
+	}
+	c.keys = newKeys
+	c.expiresAt = time.Now().Add(1 * time.Hour)
+	return nil
+}
+
+// ValidateCasdoorToken validates a Casdoor-issued JWT (RS256) using the cached JWKS.
+// Returns the user and tenant_id if valid. This is used when a client directly
+// presents a Casdoor JWT as a Bearer token (Plan B: Casdoor JWT 方式).
+func (s *userService) ValidateCasdoorToken(ctx context.Context, tokenString string) (*types.User, uint64, error) {
+	if s.config == nil || s.config.OIDCAuth == nil {
+		return nil, 0, errors.New("OIDC not configured")
+	}
+	cfg := s.config.OIDCAuth
+
+	// Parse token header to check algorithm
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to parse token: %w", err)
+	}
+	alg := token.Method.Alg()
+	if !strings.HasPrefix(alg, "RS") {
+		// Not an RSA-signed token, not a Casdoor JWT
+		return nil, 0, errors.New("not a Casdoor JWT")
+	}
+
+	// Set JWKS URI for cache
+	if casdoorJWKSCacheInstance.jwksURI == "" && strings.TrimSpace(cfg.JwksURI) != "" {
+		casdoorJWKSCacheInstance.jwksURI = strings.TrimSpace(cfg.JwksURI)
+	}
+	if casdoorJWKSCacheInstance.jwksURI == "" {
+		return nil, 0, errors.New("JWKS URI not configured for Casdoor JWT validation")
+	}
+
+	kid, _ := token.Header["kid"].(string)
+	pubKey, err := casdoorJWKSCacheInstance.GetPublicKey(kid)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get public key: %w", err)
+	}
+
+	// Parse and verify the token
+	claims := jwt.MapClaims{}
+	parsedToken, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return pubKey, nil
+	}, jwt.WithValidMethods([]string{"RS256", "RS384", "RS512"}),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuer(strings.TrimSpace(cfg.IssuerURL)))
+	if err != nil || !parsedToken.Valid {
+		return nil, 0, fmt.Errorf("invalid Casdoor JWT: %w", err)
+	}
+
+	// Extract user identifier from claims
+	var userID string
+	if sub, ok := claims["sub"].(string); ok && sub != "" {
+		userID = sub
+	} else if owner, ok := claims["owner"].(string); ok && owner != "" {
+		userID = owner
+	}
+	if userID == "" {
+		return nil, 0, errors.New("Casdoor JWT missing user identifier (sub/owner)")
+	}
+
+	// Extract email and name
+	email := extractClaimAsString(claims, "email")
+	name := extractClaimAsString(claims, "name")
+	if name == "" {
+		name = extractClaimAsString(claims, "display_name")
+	}
+
+	// Get or create user
+	user, err := s.userRepo.GetUserByEmail(ctx, email)
+	if err != nil && !isUserLookupNotFound(err) {
+		return nil, 0, fmt.Errorf("failed to query user by email: %w", err)
+	}
+	if isUserLookupNotFound(err) || user == nil {
+		// Auto-create user from Casdoor JWT (if auto-create is enabled)
+		// Use a random password since Casdoor JWT is the auth method
+		randomPassword, _ := generateRandomString(32)
+		user, err = s.Register(ctx, &types.RegisterRequest{
+			Username:           sanitizeUsernameCandidate(name),
+			Email:              email,
+			Password:           randomPassword,
+			TenantProvisioning: types.TenantProvisioningCreatePersonal, // GEO-K v1.0 integration: auto-create personal workspace so OIDC users can access business endpoints (was Tenantless → 409 TENANT_REQUIRED)
+		})
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to provision Casdoor JWT user: %w", err)
+		}
+		// Mark as OIDC-only
+		oidcOnly := true
+		user.Preferences.OidcOnlyLogin = &oidcOnly
+		user.UpdatedAt = time.Now()
+		_ = s.userRepo.UpdateUser(ctx, user)
+	}
+
+	// GEO-K v1.0 backfill: legacy OIDC users created with Tenantless mode have
+	// user.TenantID == 0 and no membership. Auto-provision a personal tenant
+	// and add the user as owner. Safe to re-run (idempotent on existing tenant).
+	if user.TenantID == 0 && s.tenantService != nil && s.memberService != nil {
+		tenant := &types.Tenant{
+			Name:        fmt.Sprintf("%s's Workspace", secutils.SanitizeForLog(user.Username)),
+			Description: "Default workspace (auto-provisioned for legacy OIDC user)",
+			Status:      "active",
+		}
+		if createdTenant, terr := s.tenantService.CreateTenant(ctx, tenant); terr == nil {
+			user.TenantID = createdTenant.ID
+			user.UpdatedAt = time.Now()
+			_ = s.userRepo.UpdateUser(ctx, user)
+			if _, mErr := s.memberService.AddMember(ctx, user.ID, createdTenant.ID, types.TenantRoleOwner, nil); mErr != nil {
+				logger.Warnf(ctx, "[auth] OIDC user %s backfill: add owner member failed: %v", user.ID, mErr)
+			}
+		} else {
+			logger.Warnf(ctx, "[auth] OIDC user %s backfill: create tenant failed: %v", user.ID, terr)
+		}
+	}
+
+	if !user.IsActive {
+		return nil, 0, errors.New("account is disabled")
+	}
+
+	// Extract tenant_id from JWT claims (Plan D)
+	var tenantID uint64
+	if tid, ok := claims["tenant_id"].(float64); ok {
+		tenantID = uint64(tid)
+	}
+	activeTenantID := tenantIDFromClaims(claims, tenantID)
+	if activeTenantID == 0 {
+		activeTenantID = user.TenantID
+	}
+
+	return user, activeTenantID, nil
 }
 
 // fetchOIDCJWKS loads the provider's JWKS document over the SSRF-safe client.

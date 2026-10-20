@@ -46,6 +46,8 @@ func RegisterTenantRoutes(
 	memberHandler *handler.TenantMemberHandler,
 	invitationHandler *handler.TenantInvitationHandler,
 	auditLogHandler *handler.AuditLogHandler,
+	domainHandler *handler.TenantDomainHandler,
+	delegationTokenHandler *handler.DelegationTokenHandler,
 	g *rbacGuards,
 ) {
 	// Cross-tenant superuser endpoints — promoted from handler if-blocks
@@ -134,6 +136,26 @@ func RegisterTenantRoutes(
 				// of /invitations; the underlying row still lives in the
 				// tenant_invitations table and shows up in the GET above.
 				g.apiKeyRoute(tenantByID, http.MethodPost, "/invite-links", apiKeyManageMembers(apiKeyFullAccess()), g.Owner(), invitationHandler.CreateInviteLink)
+			}
+
+			// Tenant domain mapping for Plan D multi-tenant OIDC routing.
+			// Domain management is Owner+ since changing domain mappings affects login flow.
+			if domainHandler != nil {
+				tenantByID.GET("/domains", g.Owner(), domainHandler.ListDomains)
+				tenantByID.POST("/domains", g.Owner(), domainHandler.CreateDomain)
+				tenantByID.DELETE("/domains/:domainId", g.Owner(), domainHandler.DeleteDomain)
+				// Cross-tenant domain lookup endpoint
+				g.apiKeyRoute(r, http.MethodGet, "/tenants/domains/lookup",
+					apiKeyPlatform(types.APIKeyCapabilitySystemTenantsRead, types.APIKeyCapabilitySystemTenantsManage),
+					g.CrossTenant(), domainHandler.GetDomain)
+			}
+
+			// Delegation tokens for third-party system temporary access.
+			// Owner+ can create/list/revoke tokens scoped to their tenant.
+			if delegationTokenHandler != nil {
+				tenantByID.GET("/delegation-tokens", g.Owner(), delegationTokenHandler.ListDelegationTokens)
+				tenantByID.POST("/delegation-tokens", g.Owner(), delegationTokenHandler.CreateDelegationToken)
+				tenantByID.DELETE("/delegation-tokens/:tokenId", g.Owner(), delegationTokenHandler.RevokeDelegationToken)
 			}
 
 			// Audit log feed (PR 6 of #1303). Admin+ so denied-action
