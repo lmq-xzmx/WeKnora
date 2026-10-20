@@ -248,6 +248,40 @@ func (s *tenantMemberService) EnsureOwner(
 	return member, nil
 }
 
+func (s *tenantMemberService) EnsureMember(
+	ctx context.Context,
+	userID string,
+	tenantID uint64,
+) (*types.TenantMember, error) {
+	existing, err := s.repo.Get(ctx, userID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	member := &types.TenantMember{
+		UserID:   userID,
+		TenantID: tenantID,
+		Role:     types.TenantRoleContributor,
+		Status:   types.TenantMemberStatusActive,
+		JoinedAt: time.Now(),
+	}
+	if err := s.repo.Create(ctx, member); err != nil {
+		if isDuplicateMembership(err) {
+			if winner, getErr := s.repo.Get(ctx, userID, tenantID); getErr == nil && winner != nil {
+				logger.Infof(ctx,
+					"EnsureMember lost race for user=%s tenant=%d, returning winning row (role=%s)",
+					userID, tenantID, winner.Role)
+				return winner, nil
+			}
+		}
+		return nil, err
+	}
+	logger.Infof(ctx, "Bootstrapped member membership for user=%s tenant=%d", userID, tenantID)
+	return member, nil
+}
+
 // GetMembership returns the active membership or (nil, nil) when absent.
 func (s *tenantMemberService) GetMembership(
 	ctx context.Context,

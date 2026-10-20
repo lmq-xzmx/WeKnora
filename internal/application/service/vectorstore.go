@@ -518,6 +518,9 @@ func validateConnectionAddrSSRF(engineType types.RetrieverEngineType, config typ
 			addr = fmt.Sprintf("%s:%d", config.Host, config.Port)
 		}
 		return check(addr)
+	case types.PostgresRetrieverEngineType:
+		// Single host:port address field.
+		return check(config.Addr)
 	case types.WeaviateRetrieverEngineType:
 		// Both the HTTP host and the gRPC address are dialed by the driver,
 		// so both must be validated (validating Host alone leaves GrpcAddress

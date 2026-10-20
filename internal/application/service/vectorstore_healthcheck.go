@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -121,7 +122,18 @@ func testPostgresConnection(ctx context.Context, config types.ConnectionConfig) 
 		return "", nil
 	}
 
-	db, err := sql.Open("pgx", config.Addr)
+	// pgx expects a keyword/value connection string or URL, not "host:port".
+	// Split addr into host and port.
+	host := config.Addr
+	port := "5432"
+	if h, p, err := net.SplitHostPort(config.Addr); err == nil {
+		host = h
+		port = p
+	}
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s",
+		host, port, config.Username, config.Password, config.Database)
+
+	db, err := sql.Open("pgx", connStr)
 	if err != nil {
 		return "", errors.NewBadRequestError("failed to create postgres connection: invalid configuration")
 	}

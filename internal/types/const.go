@@ -28,6 +28,9 @@ const (
 	PrincipalContextKey ContextKey = "Principal"
 	// TenantAPIKeyScopeContextKey carries per-API-key operation and KB scopes.
 	TenantAPIKeyScopeContextKey ContextKey = "TenantAPIKeyScope"
+	// DelegationTokenScopeContextKey carries the resolved identity of a
+	// delegation token bearer (TokenID, Name, TenantID, Scopes).
+	DelegationTokenScopeContextKey ContextKey = "DelegationTokenScope"
 	// AuditAPIKeyContextKey carries the API key id/name for activity
 	// attribution only. It is not an authorization grant.
 	AuditAPIKeyContextKey ContextKey = "AuditAPIKey"

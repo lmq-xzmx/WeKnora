@@ -1,1 +1,0 @@
-ALTER TABLE im_channels ADD COLUMN locale VARCHAR(16) NOT NULL DEFAULT '';

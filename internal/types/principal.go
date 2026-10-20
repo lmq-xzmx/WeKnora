@@ -16,6 +16,7 @@ const (
 	PrincipalEmbedSession    = "embed_session"
 	PrincipalEmbedVisitor    = "embed_visitor"
 	PrincipalMCPEndpoint     = "mcp_endpoint"
+	PrincipalDelegationToken = "delegation_token"
 )
 
 // EmbedVisitorHeader is sent by the embed widget to identify a browser visitor

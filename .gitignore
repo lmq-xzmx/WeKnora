@@ -64,3 +64,10 @@ miniprogram/project.private.config.json
 # Locally built BrowserSkill runtime and extension bundles
 /artifacts/browserskill/
 .gstack/
+
+# SQLite migrations (use versioned/ for PostgreSQL)
+migrations/sqlite/
+
+# Compiled binary artifacts
+小炬人*
+*.bak

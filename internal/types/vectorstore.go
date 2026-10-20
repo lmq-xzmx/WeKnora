@@ -92,6 +92,7 @@ var validEngineTypes = map[RetrieverEngineType]bool{
 	DorisRetrieverEngineType:           true,
 	TencentVectorDBRetrieverEngineType: true,
 	OpenSearchRetrieverEngineType:      true,
+	PostgresRetrieverEngineType:        true,
 }
 
 // IsValidEngineType checks whether the given engine type is valid for VectorStore.
@@ -681,9 +682,21 @@ func GetVectorStoreTypes() []VectorStoreTypeInfo {
 				{Name: "number_of_replicas", Type: "number", Required: false, Description: "Replicas", Default: 1},
 			},
 		},
-		// PostgreSQL and SQLite are excluded from the type list because they only support
-		// the app's default DB connection (UseDefaultConnection=true). They appear as
-		// env stores when configured via RETRIEVE_DRIVER but cannot be added as DB stores.
+		// SQLite is excluded from the type list because it only supports
+		// the app's default DB connection. PostgreSQL (with pgvector) can be added as a DB store.
+		{
+			Type:        "postgres",
+			DisplayName: "PostgreSQL",
+			ConnectionFields: []VectorStoreFieldInfo{
+				{Name: "addr", Type: "string", Required: true, Description: "Host:Port", Default: "localhost:5432"},
+				{Name: "username", Type: "string", Required: false, Description: "Username", Default: "postgres"},
+				{Name: "password", Type: "string", Required: false, Sensitive: true, Description: "Password"},
+				{Name: "database", Type: "string", Required: false, Description: "Database", Default: "weknora"},
+			},
+			IndexFields: []VectorStoreFieldInfo{
+				{Name: "collection_prefix", Type: "string", Required: false, Description: "Table Prefix", Default: "weknora_embeddings"},
+			},
+		},
 		{
 			Type:        "qdrant",
 			DisplayName: "Qdrant",
