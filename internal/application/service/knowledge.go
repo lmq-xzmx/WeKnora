@@ -833,8 +833,9 @@ func (s *knowledgeService) UpdateKnowledge(ctx context.Context, knowledge *types
 	// Notify GEO-Knowledge of the update
 	if s.geoKWebhook != nil {
 		go func() {
+			complete := knowledgeContentCompleteForWebhook(record)
 			if err := s.geoKWebhook.Notify(context.Background(), geoknowledge.EventUpdated, geoknowledge.EntityKnowledge,
-				record.ID, record.Title, knowledgeBodyForWebhook(record), "", record.Source, record.KnowledgeBaseID); err != nil {
+				record.ID, record.Title, knowledgeBodyForWebhook(record), "", record.Source, record.Channel, &complete, record.KnowledgeBaseID); err != nil {
 				logger.Warnf(ctx, "GEO-Knowledge webhook notify failed: %v", err)
 			}
 		}()
@@ -856,6 +857,19 @@ func knowledgeBodyForWebhook(k *types.Knowledge) string {
 		return body
 	}
 	return k.Description
+}
+
+// knowledgeContentCompleteForWebhook 报告 webhook 载荷里的 content 是否为完整正文。
+//
+// manual 知识的正文在 metadata.content（完整）；文件 / url 类型的正文在
+// 切分后的 chunk 里，knowledgeBodyForWebhook 的兜底 Description 是
+// 服务端生成的 AI 摘要（不完整）。接收方拿摘要当正文是数据损坏 ——
+// 必须如实声明，让 GEO-K 自己决定信不信任这段内容。
+func knowledgeContentCompleteForWebhook(k *types.Knowledge) bool {
+	if k == nil {
+		return false
+	}
+	return manualContentFromMetadata(k.Metadata) != ""
 }
 
 // manualContentFromMetadata 从 knowledge 的 metadata JSON 里取出手工录入的正文。

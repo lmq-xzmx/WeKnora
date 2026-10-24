@@ -51,6 +51,20 @@ type Payload struct {
 	// GEO-K 靠它把回流的条目落到正确的本地基地 —— 缺了这个字段，
 	// GEO-K 只能建一条 kb_id 为空的孤儿行，在知识库列表里根本看不到。
 	KnowledgeBaseID string `json:"knowledge_base_id,omitempty"`
+	// Channel 标识这条知识的来源渠道（api = GEO-K 推送 / web = WeKnora 侧新建）。
+	//
+	// GEO-K 靠它区分「我们自己推过去的」和「用户在 WeKnora 建的」——
+	// 前者在本地被删除后不该被远端事件复活，两种来源的处理完全相反。
+	// 缺省（空串）时 GEO-K 会退回「推送痕迹」判据。
+	Channel string `json:"channel,omitempty"`
+	// ContentComplete 声明 Content 是不是**完整正文**。
+	//
+	// manual 知识的正文在 metadata.content 里（完整）；
+	// 文件 / url 类型的正文在切分后的 chunk 里，Content 只是 Description
+	// （服务端生成的 AI 摘要）。接收方拿摘要当正文是数据损坏 ——
+	// 所以必须如实声明，让 GEO-K 决定是否信任这段内容。
+	// 指针而不是 bool：nil = 不声明（老接收方按未知处理）。
+	ContentComplete *bool `json:"content_complete,omitempty"`
 	Timestamp       string `json:"timestamp"`
 }
 
@@ -75,7 +89,13 @@ func NewClient(cfg *config.GEOKnowledgeWebhookConfig) *Client {
 //
 // knowledgeBaseID 可选：传了就带上，GEO-K 能把条目落到正确的本地基地；
 // 不传行为跟以前一样（GEO-K 会回落到默认解析）。
-func (c *Client) Notify(ctx context.Context, event EventType, entity EntityType, id, title, content, summary, sourceURL string, knowledgeBaseID ...string) error {
+//
+// channel / contentComplete 描述这条知识的来源与正文完整性，
+// 见 Payload 字段注释。删除事件没有正文，contentComplete 传 nil 即可。
+func (c *Client) Notify(ctx context.Context, event EventType, entity EntityType,
+	id, title, content, summary, sourceURL, channel string, contentComplete *bool,
+	knowledgeBaseID ...string,
+) error {
 	if c == nil || c.cfg == nil || !c.cfg.Enabled {
 		return nil // Disabled, nothing to do
 	}
@@ -84,14 +104,16 @@ func (c *Client) Notify(ctx context.Context, event EventType, entity EntityType,
 	}
 
 	payload := Payload{
-		Event:     event,
-		Entity:    string(entity),
-		ID:        id,
-		Title:     title,
-		Content:   content,
-		Summary:   summary,
-		SourceURL: sourceURL,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Event:           event,
+		Entity:          string(entity),
+		ID:              id,
+		Title:           title,
+		Content:         content,
+		Summary:         summary,
+		SourceURL:       sourceURL,
+		Channel:         channel,
+		ContentComplete: contentComplete,
+		Timestamp:       time.Now().UTC().Format(time.RFC3339),
 	}
 	if len(knowledgeBaseID) > 0 {
 		payload.KnowledgeBaseID = knowledgeBaseID[0]

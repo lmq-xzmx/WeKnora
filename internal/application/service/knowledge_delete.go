@@ -627,7 +627,7 @@ func (s *knowledgeService) executeKnowledgeDelete(plan *knowledgeDeletePlan, sin
 		go func() {
 			for _, k := range knowledgeList {
 				if err := s.geoKWebhook.Notify(context.Background(), geoknowledge.EventDeleted, geoknowledge.EntityKnowledge,
-					k.ID, k.Title, "", "", k.Source, k.KnowledgeBaseID); err != nil {
+					k.ID, k.Title, "", "", k.Source, k.Channel, nil, k.KnowledgeBaseID); err != nil {
 					logger.Warnf(ctx, "GEO-Knowledge webhook delete notify failed for %s: %v", k.ID, err)
 				}
 			}

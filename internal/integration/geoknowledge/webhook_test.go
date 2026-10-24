@@ -2,6 +2,7 @@ package geoknowledge
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -19,14 +20,14 @@ func newTestClient(url string) *Client {
 
 func TestNotifyDisabled(t *testing.T) {
 	c := NewClient(&config.GEOKnowledgeWebhookConfig{WebhookURL: "http://127.0.0.1:1", Enabled: false})
-	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", ""); err != nil {
+	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", "", "", nil); err != nil {
 		t.Fatalf("disabled client should not error, got %v", err)
 	}
 }
 
 func TestNotifyNoURL(t *testing.T) {
 	c := NewClient(&config.GEOKnowledgeWebhookConfig{Enabled: true})
-	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", ""); err != nil {
+	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", "", "", nil); err != nil {
 		t.Fatalf("no-URL client should not error, got %v", err)
 	}
 }
@@ -46,7 +47,7 @@ func TestNotifySuccess(t *testing.T) {
 		Token:         "secret-token",
 		WebhookSecret: "hmac-key",
 	})
-	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", ""); err != nil {
+	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", "", "", nil); err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
 	if gotAuth != "Bearer secret-token" {
@@ -70,7 +71,7 @@ func TestNotifyRetriesOn5xx(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(srv.URL)
-	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", ""); err != nil {
+	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", "", "", nil); err != nil {
 		t.Fatalf("Notify should succeed after retries: %v", err)
 	}
 	if n := atomic.LoadInt32(&calls); n != 3 {
@@ -88,7 +89,7 @@ func TestNotifyDoesNotRetryOn4xx(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(srv.URL)
-	err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", "")
+	err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", "", "", nil)
 	if err == nil {
 		t.Fatal("expected error on 400")
 	}
@@ -107,11 +108,40 @@ func TestNotifyFailsAfterMaxAttempts(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(srv.URL)
-	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", ""); err == nil {
+	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "id", "t", "c", "", "", "", nil); err == nil {
 		t.Fatal("expected error when all attempts fail")
 	}
 	if n := atomic.LoadInt32(&calls); n != maxAttempts {
 		t.Errorf("server called %d times, want %d", n, maxAttempts)
+	}
+}
+
+// 载荷必须如实带 channel 和 content_complete —— GEO-K 靠它们区分
+// 「我们推的（api）」和「用户建的（web）」，以及「完整正文」和「AI 摘要」。
+// 这两个字段缺了，GEO-K 就只能靠推断，推断错一次就是数据损坏或假冲突。
+func TestNotifySendsChannelAndContentComplete(t *testing.T) {
+	var payload Payload
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	complete := true
+	c := newTestClient(srv.URL)
+	err := c.Notify(context.Background(), EventUpdated, EntityKnowledge,
+		"kn-1", "t", "c", "", "https://example.com", "api", &complete, "kb-1")
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if payload.Channel != "api" {
+		t.Errorf("Channel = %q, want api", payload.Channel)
+	}
+	if payload.ContentComplete == nil || !*payload.ContentComplete {
+		t.Errorf("ContentComplete = %v, want true", payload.ContentComplete)
+	}
+	if payload.KnowledgeBaseID != "kb-1" {
+		t.Errorf("KnowledgeBaseID = %q, want kb-1", payload.KnowledgeBaseID)
 	}
 }
 
@@ -127,7 +157,7 @@ func TestNotifyResendsBodyOnRetry(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(srv.URL)
-	_ = c.Notify(context.Background(), EventCreated, EntityKnowledge, "kn-1", "t", "c", "", "")
+	_ = c.Notify(context.Background(), EventCreated, EntityKnowledge, "kn-1", "t", "c", "", "", "", nil)
 
 	if len(bodies) != maxAttempts {
 		t.Fatalf("got %d requests, want %d", len(bodies), maxAttempts)

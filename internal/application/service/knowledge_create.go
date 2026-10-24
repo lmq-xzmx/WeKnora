@@ -874,9 +874,29 @@ func (s *knowledgeService) notifyGEOKCreated(ctx context.Context, knowledge *typ
 		return
 	}
 	go func() {
+		complete := knowledgeContentCompleteForWebhook(knowledge)
 		if err := s.geoKWebhook.Notify(context.Background(), geoknowledge.EventCreated, geoknowledge.EntityKnowledge,
-			knowledge.ID, knowledge.Title, knowledgeBodyForWebhook(knowledge), "", knowledge.Source, knowledge.KnowledgeBaseID); err != nil {
+			knowledge.ID, knowledge.Title, knowledgeBodyForWebhook(knowledge), "", knowledge.Source, knowledge.Channel, &complete, knowledge.KnowledgeBaseID); err != nil {
 			logger.Warnf(ctx, "GEO-Knowledge webhook created notify failed for %s: %v", knowledge.ID, err)
+		}
+	}()
+}
+
+// notifyGEOKUpdated sends a webhook to GEO-Knowledge when a knowledge is updated.
+//
+// 为什么单列一个：UpdateManualKnowledge（手工知识的在线编辑）此前**没有**
+// GEO-K 通知 —— 用户在 WeKnora 里改手工知识内容，GEO-K 完全收不到，
+// 要靠整库拉取才能发现变化。它和 UpdateKnowledge 走的是两个入口，
+// 但 GEO-K 需要的事件语义完全一样。
+func (s *knowledgeService) notifyGEOKUpdated(ctx context.Context, knowledge *types.Knowledge) {
+	if s.geoKWebhook == nil {
+		return
+	}
+	go func() {
+		complete := knowledgeContentCompleteForWebhook(knowledge)
+		if err := s.geoKWebhook.Notify(context.Background(), geoknowledge.EventUpdated, geoknowledge.EntityKnowledge,
+			knowledge.ID, knowledge.Title, knowledgeBodyForWebhook(knowledge), "", knowledge.Source, knowledge.Channel, &complete, knowledge.KnowledgeBaseID); err != nil {
+			logger.Warnf(ctx, "GEO-Knowledge webhook updated notify failed for %s: %v", knowledge.ID, err)
 		}
 	}()
 }
@@ -1100,6 +1120,8 @@ func (s *knowledgeService) UpdateManualKnowledge(ctx context.Context,
 			"knowledge", existing.ID, types.AuditOutcomeSuccess, map[string]any{
 				"title": existing.Title, "status": status,
 			})
+		// 草稿的内容也是内容 —— GEO-K 同样需要知道（标待拉回，由用户决定）。
+		s.notifyGEOKUpdated(ctx, existing)
 		return existing, nil
 	}
 
@@ -1137,6 +1159,8 @@ func (s *knowledgeService) UpdateManualKnowledge(ctx context.Context,
 			"title": existing.Title, "status": status, "processing_status": "pending",
 			"task_id": taskID, "trigger": kbActivityTrigger(ctx),
 		})
+	// 补上此前缺失的 GEO-K 通知（#22）：手工编辑的内容变更推给 GEO-K。
+	s.notifyGEOKUpdated(ctx, existing)
 	return existing, nil
 }
 
