@@ -46,10 +46,11 @@ func (f *webPageMemoryFiles) DeleteFile(_ context.Context, path string) error {
 func TestSavedWebPagesPersistAcrossRunsAndEnforceMessageScope(t *testing.T) {
 	catalog, db := newResourceCatalogForTest(t)
 	// Only the ownership columns are needed; use the production GORM resource models above.
+	// PostgreSQL 没有 SQLite 的 DATETIME 动态类型，时间列写 TIMESTAMPTZ。
 	require.NoError(t, db.Exec(`CREATE TABLE sessions (
- id TEXT PRIMARY KEY, tenant_id INTEGER, user_id TEXT, deleted_at DATETIME)`).Error)
+ id TEXT PRIMARY KEY, tenant_id INTEGER, user_id TEXT, deleted_at TIMESTAMPTZ)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE messages (
- id TEXT PRIMARY KEY, session_id TEXT, role TEXT, deleted_at DATETIME)`).Error)
+ id TEXT PRIMARY KEY, session_id TEXT, role TEXT, deleted_at TIMESTAMPTZ)`).Error)
 	require.NoError(t, db.Exec(`INSERT INTO sessions (id,tenant_id,user_id) VALUES
  ('session-a',7,'alice'),('session-b',7,'bob')`).Error)
 	require.NoError(t, db.Exec(`INSERT INTO messages (id,session_id,role) VALUES
@@ -154,9 +155,9 @@ func TestSharedAgentWebPagesUseSessionOwnerStorageScope(t *testing.T) {
 	// Exercise construction of the source through a read. A scoped fixture binds a page
 	// to the caller's session, while the search/provider tenant is 99.
 	require.NoError(t, db.Exec(`CREATE TABLE sessions
-		(id TEXT PRIMARY KEY, tenant_id INTEGER, user_id TEXT, deleted_at DATETIME)`).Error)
+		(id TEXT PRIMARY KEY, tenant_id INTEGER, user_id TEXT, deleted_at TIMESTAMPTZ)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE messages
-		(id TEXT PRIMARY KEY, session_id TEXT, role TEXT, deleted_at DATETIME)`).Error)
+		(id TEXT PRIMARY KEY, session_id TEXT, role TEXT, deleted_at TIMESTAMPTZ)`).Error)
 	require.NoError(t, db.Exec(`INSERT INTO sessions (id,tenant_id,user_id) VALUES ('session',7,'alice')`).Error)
 	require.NoError(t, db.Exec(`INSERT INTO messages (id,session_id,role)
 		VALUES ('message','session','assistant')`).Error)

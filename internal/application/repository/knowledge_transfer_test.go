@@ -11,9 +11,16 @@ import (
 func TestTransferCheckpointReturnsStoredTimestampPrecision(t *testing.T) {
 	db := setupKnowledgeTestDB(t)
 	// Emulate a database that stores fewer fractional digits than time.Now.
-	require.NoError(t, db.Exec(`CREATE TRIGGER truncate_checkpoint_time AFTER UPDATE ON knowledges
-        BEGIN UPDATE knowledges SET updated_at = strftime('%Y-%m-%d %H:%M:%S', NEW.updated_at) || '+00:00'
-        WHERE id = NEW.id; END`).Error)
+	// PostgreSQL 的 timestamptz 精度是微秒，比 SQLite 的秒级更细，所以这里
+	// 用一个 BEFORE UPDATE 触发器把 updated_at 截断到秒，模拟精度更低的存储。
+	require.NoError(t, db.Exec(`CREATE OR REPLACE FUNCTION truncate_checkpoint_time() RETURNS trigger AS $$
+	BEGIN
+		NEW.updated_at := date_trunc('second', NEW.updated_at);
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql`).Error)
+	require.NoError(t, db.Exec(`CREATE TRIGGER truncate_checkpoint_time BEFORE UPDATE ON knowledges
+		FOR EACH ROW EXECUTE FUNCTION truncate_checkpoint_time()`).Error)
 	row := &types.Knowledge{ID: "doc", TenantID: 7, KnowledgeBaseID: "source", ParseStatus: types.ParseStatusCompleted}
 	require.NoError(t, db.Omit("custom_metadata").Create(row).Error)
 	repo := NewKnowledgeRepository(db)

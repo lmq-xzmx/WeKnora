@@ -6,9 +6,9 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -43,9 +43,7 @@ func testAPITenantKeyScopeContext(tenantID uint64, keyID uint64) context.Context
 func newTestSessionService(t *testing.T) (*sessionService, *gorm.DB) {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Session{}))
+	db := testutil.OpenTestDB(t, &types.Session{})
 
 	return &sessionService{
 		sessionRepo: repository.NewSessionRepository(db),

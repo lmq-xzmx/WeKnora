@@ -4,12 +4,12 @@ import (
 	"testing"
 
 	"go.uber.org/dig"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
@@ -25,10 +25,7 @@ import (
 // dependencies still satisfies the interface and still serves lookups, so it
 // would pass every other test while silently never rebuilding anything.
 func TestRetrieveEngineRegistryWiring(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open in-mem db: %v", err)
-	}
+	db := testutil.OpenTestDB(t)
 
 	c := dig.New()
 	provide := func(constructor interface{}) {
@@ -44,7 +41,7 @@ func TestRetrieveEngineRegistryWiring(t *testing.T) {
 	provide(NewEngineFactory)
 	provide(initRetrieveEngineRegistry)
 
-	err = c.Invoke(func(registry interfaces.RetrieveEngineRegistry) {
+	err := c.Invoke(func(registry interfaces.RetrieveEngineRegistry) {
 		concrete, ok := registry.(*retriever.RetrieveEngineRegistry)
 		if !ok {
 			t.Fatalf("expected *retriever.RetrieveEngineRegistry, got %T", registry)

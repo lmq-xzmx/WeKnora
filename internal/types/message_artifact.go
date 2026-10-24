@@ -38,7 +38,7 @@ func (MessageArtifactRecord) TableName() string { return "message_artifacts" }
 
 // NewMessageArtifactRecords turns a message's artifact list into table rows.
 //
-// CreatedAt is stored in UTC: SQLite compares DATETIME values as text, so
+// CreatedAt is stored in UTC: the DB compares DATETIME values by text, so
 // mixing zones would break ORDER BY created_at. A zero CreatedAt (an artifact
 // built outside the collector) falls back to now, matching what the collector
 // would have stamped.

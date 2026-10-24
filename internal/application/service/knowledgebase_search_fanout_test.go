@@ -90,7 +90,6 @@ func TestIsKnownEngineType(t *testing.T) {
 		types.MilvusRetrieverEngineType,
 		types.QdrantRetrieverEngineType,
 		types.WeaviateRetrieverEngineType,
-		types.SQLiteRetrieverEngineType,
 		types.InfinityRetrieverEngineType,
 		types.TencentVectorDBRetrieverEngineType,
 		types.DorisRetrieverEngineType,

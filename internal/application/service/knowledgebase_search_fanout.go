@@ -181,7 +181,6 @@ func isKnownEngineType(t types.RetrieverEngineType) bool {
 		types.PostgresRetrieverEngineType,
 		types.QdrantRetrieverEngineType,
 		types.WeaviateRetrieverEngineType,
-		types.SQLiteRetrieverEngineType,
 		types.InfinityRetrieverEngineType,
 		types.TencentVectorDBRetrieverEngineType,
 		types.DorisRetrieverEngineType:

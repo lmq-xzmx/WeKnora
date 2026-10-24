@@ -5,10 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -22,12 +21,10 @@ func newSkillTestRepo(t *testing.T) TenantSkillRepository {
 // read a column raw to prove a secret is encrypted at rest.
 func newSkillTestRepoWithDB(t *testing.T) (TenantSkillRepository, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
+	db := testutil.OpenTestDB(t,
 		&types.TenantSkillEntity{}, &types.TenantSkillSnapshotEntity{},
 		&types.TenantUserEnvVar{}, &types.TenantSkillCatalogEntity{},
-	))
+	)
 	// AutoMigrate cannot express the partial unique index, so add it here to
 	// match the production migration.
 	require.NoError(t, db.Exec(

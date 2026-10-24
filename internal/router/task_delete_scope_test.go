@@ -11,14 +11,12 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+
+	"github.com/Tencent/WeKnora/internal/testutil"
 )
 
 func TestDeleteFailureCallbackPreservesTaskScope(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Knowledge{}))
+	db := testutil.OpenTestDB(t, &types.Knowledge{})
 	for _, row := range []*types.Knowledge{
 		{ID: "doc", TenantID: 7, KnowledgeBaseID: "kb", ParseStatus: types.ParseStatusDeleting},
 		{ID: "other-kb", TenantID: 7, KnowledgeBaseID: "other", ParseStatus: types.ParseStatusDeleting},

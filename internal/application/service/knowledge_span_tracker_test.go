@@ -9,15 +9,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// span tracker tests use a real GORM-backed repo against an in-memory
-// SQLite DB. We do this instead of a stub repo because the cascade /
+// span tracker tests use a real GORM-backed repo against a PostgreSQL
+// schema. We do this instead of a stub repo because the cascade /
 // LookupStage logic interacts non-trivially with the persistence layer
 // (UPSERT, MAX(attempt), parent IN ...) — a stub would let regressions
 // in those queries slip through.
@@ -25,10 +25,12 @@ import (
 // We DDL-define the spans table inline (same content as the repo test's
 // spansTestDDL — kept duplicated rather than exported because a service
 // test crossing into the repository test file's identifiers couples the
-// two too tightly).
+// two too tightly). The column types follow PostgreSQL semantics
+// (BIGSERIAL instead of SQLite's AUTOINCREMENT, TIMESTAMP instead of
+// DATETIME) so the DDL matches what the production migration creates.
 const spanTrackerTestDDL = `
 CREATE TABLE IF NOT EXISTS knowledge_processing_spans (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              BIGSERIAL PRIMARY KEY,
     knowledge_id    VARCHAR(64) NOT NULL,
     attempt         INTEGER     NOT NULL DEFAULT 1,
     span_id         VARCHAR(64) NOT NULL,
@@ -42,19 +44,18 @@ CREATE TABLE IF NOT EXISTS knowledge_processing_spans (
     error_code      VARCHAR(64),
     error_message   TEXT,
     error_detail    TEXT,
-    started_at      DATETIME,
-    finished_at     DATETIME,
+    started_at      TIMESTAMP,
+    finished_at     TIMESTAMP,
     duration_ms     BIGINT,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (knowledge_id, attempt, span_id)
 );
 `
 
 func setupSpanTrackerTest(t *testing.T) (SpanTracker, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
+	db := testutil.OpenTestDB(t)
 	require.NoError(t, db.Exec(spanTrackerTestDDL).Error)
 	// Pass nil for the heartbeat db: these tests don't exercise
 	// heartbeat side-effects (those are covered in the housekeeping

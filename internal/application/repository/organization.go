@@ -125,9 +125,8 @@ func (r *organizationRepository) AddTenantMember(
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// A positive limit is checked in the same transaction as the insert,
 		// with the organization row locked, so concurrent joins cannot all
-		// pass the count. SQLite has no row locks; it serializes writers,
-		// and a stale read fails to upgrade to a write instead.
-		if memberLimit > 0 && tx.Name() != "sqlite" {
+		// pass the count.
+		if memberLimit > 0 {
 			var org types.Organization
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
 				Where("id = ?", member.OrganizationID).First(&org).Error; err != nil {

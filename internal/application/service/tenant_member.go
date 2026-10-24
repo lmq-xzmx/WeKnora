@@ -26,7 +26,7 @@ import (
 // with TranslateError enabled). The string match on "duplicate" /
 // "unique" is the fallback for raw drivers that don't surface the
 // sentinel — Postgres "duplicate key value violates unique constraint",
-// SQLite "UNIQUE constraint failed", MySQL "Duplicate entry" all
+// MySQL "Duplicate entry" and similar
 // contain at least one of those tokens.
 func isDuplicateMembership(err error) bool {
 	if err == nil {

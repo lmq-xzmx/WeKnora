@@ -5,18 +5,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func newMessageRepositoryForForkTest(t *testing.T) (*messageRepository, *gorm.DB) {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Message{}, &types.MessageArtifactRecord{}))
+	db := testutil.OpenTestDB(t, &types.Message{}, &types.MessageArtifactRecord{})
 
 	return &messageRepository{db: db}, db
 }

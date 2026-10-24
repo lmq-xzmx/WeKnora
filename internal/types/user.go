@@ -52,14 +52,14 @@ type UserPreferences struct {
 }
 
 // Value implements driver.Valuer so GORM persists UserPreferences as
-// JSON text (Postgres jsonb column / SQLite TEXT). Empty struct serialises
+// JSON text (Postgres jsonb column). Empty struct serialises
 // to "{}", matching the NOT NULL DEFAULT '{}' column constraint.
 func (p UserPreferences) Value() (driver.Value, error) {
 	return json.Marshal(p)
 }
 
 // Scan implements sql.Scanner so GORM can hydrate UserPreferences back
-// from the underlying column. Accept []byte (Postgres jsonb / SQLite blob)
+// from the underlying column. Accept []byte (Postgres jsonb)
 // and string (some drivers hand TEXT as string) for portability.
 func (p *UserPreferences) Scan(value interface{}) error {
 	if value == nil {
@@ -103,7 +103,7 @@ type User struct {
 	// Whether the user is a system administrator (independent of workspace roles)
 	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
 	// Per-user UI/feature preferences.
-	// Stored as JSON (jsonb on Postgres, TEXT on SQLite) via the
+	// Stored as JSON (jsonb on Postgres) via the
 	// driver.Valuer / sql.Scanner methods on UserPreferences.
 	Preferences UserPreferences `json:"preferences" gorm:"type:jsonb;not null;default:'{}'"`
 	// Creation time of the user

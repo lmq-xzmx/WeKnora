@@ -7,48 +7,28 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// spansTestDDL mirrors migration 000053 for SQLite — same column order
-// minus the JSONB type (SQLite stores JSON as TEXT, the JSONMap Scanner
-// handles the round trip transparently). Inlined for the same reason
-// knowledgebase_sqlite_test.go inlines its DDL: GORM AutoMigrate doesn't
-// reproduce our PostgreSQL-flavoured schema cleanly.
-const spansTestDDL = `
-CREATE TABLE IF NOT EXISTS knowledge_processing_spans (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    knowledge_id    VARCHAR(64) NOT NULL,
-    attempt         INTEGER     NOT NULL DEFAULT 1,
-    span_id         VARCHAR(64) NOT NULL,
-    parent_span_id  VARCHAR(64),
-    name            VARCHAR(255) NOT NULL,
-    kind            VARCHAR(16) NOT NULL,
-    status          VARCHAR(16) NOT NULL,
-    input           TEXT,
-    output          TEXT,
-    metadata        TEXT,
-    error_code      VARCHAR(64),
-    error_message   TEXT,
-    error_detail    TEXT,
-    started_at      DATETIME,
-    finished_at     DATETIME,
-    duration_ms     BIGINT,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (knowledge_id, attempt, span_id)
-);
-`
-
 func setupSpanTestRepo(t *testing.T) (KnowledgeSpanRepository, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.Exec(spansTestDDL).Error)
+	// 以前这里内联了一份 SQLite 方言的 DDL，因为 knowledge_processing_spans 的
+	// JSONB 列在 SQLite 上 AutoMigrate 映射不出来。PostgreSQL 上 AutoMigrate
+	// 能直接按 types 的 gorm tag 建表，所以改用 AutoMigrate。
+	db := testutil.OpenTestDB(t, &types.KnowledgeProcessingSpan{})
+
+	// Upsert 走 ON CONFLICT (knowledge_id, attempt, span_id)，所以这三个列
+	// 上必须有唯一约束。生产迁移 000055 建的是
+	// CONSTRAINT uq_kpspan_attempt_span UNIQUE (knowledge_id, attempt, span_id)，
+	// 但 types 里的 gorm tag 没写，AutoMigrate 建不出这个约束，
+	// 这里按生产定义补上。
+	require.NoError(t, db.Exec(
+		`ALTER TABLE knowledge_processing_spans
+		 ADD CONSTRAINT uq_kpspan_attempt_span UNIQUE (knowledge_id, attempt, span_id)`).Error)
 	return NewKnowledgeSpanRepository(db), db
 }
 

@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,7 +19,6 @@ import (
 
 	modelruntime "github.com/Tencent/WeKnora/internal/models/runtime"
 
-	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	_ "github.com/duckdb/duckdb-go/v2"
 	esv7 "github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v8"
@@ -33,7 +31,6 @@ import (
 	"go.uber.org/dig"
 	"google.golang.org/grpc"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/agent/approval"
@@ -46,7 +43,6 @@ import (
 	openSearchRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/opensearch"
 	postgresRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/postgres"
 	qdrantRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/qdrant"
-	sqliteRetrieverRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/sqlite"
 	tencentVectorDBRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/tencentvectordb"
 	weaviateRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/weaviate"
 	"github.com/Tencent/WeKnora/internal/application/service"
@@ -83,6 +79,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/im/wecom"
 	"github.com/Tencent/WeKnora/internal/im/yunzhijia"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
+	"github.com/Tencent/WeKnora/internal/integration/geoknowledge"
 	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/mcp"
@@ -237,6 +234,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewOrganizationService))
 	must(container.Provide(service.NewKBShareService)) // KBShareService must be registered before KnowledgeService and KnowledgeTagService
 	must(container.Provide(service.NewAgentShareService))
+	must(container.Provide(func(cfg *config.Config) *geoknowledge.Client {
+		return geoknowledge.NewClient(cfg.GEOKnowledgeWebhook)
+	}))
 	must(container.Provide(service.NewKnowledgeService))
 	must(container.Provide(service.NewSpanTracker))
 	must(container.Provide(service.NewChunkService))
@@ -788,7 +788,6 @@ func initRedisClient() (*redis.Client, error) {
 func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 	var migrateDSN string
-	var sqliteDBPath string
 	switch os.Getenv("DB_DRIVER") {
 	case "postgres":
 		// DSN for GORM (key-value format)
@@ -833,22 +832,6 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 			os.Getenv("DB_PORT"),
 			os.Getenv("DB_NAME"),
 		)
-	case "sqlite":
-		dbPath := os.Getenv("DB_PATH")
-		if dbPath == "" {
-			dbPath = "./data/weknora.db"
-		}
-		if dir := filepath.Dir(dbPath); dir != "." && dir != "" {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return nil, fmt.Errorf("failed to create SQLite data directory %s: %w", dir, err)
-			}
-		}
-		sqlite_vec.Auto()
-		dsn := dbPath + "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on"
-		dialector = sqlite.Open(dsn)
-		sqliteDBPath = dbPath
-		migrateDSN = "sqlite3://" + dbPath
-		logger.Infof(context.Background(), "DB Config: driver=sqlite path=%s", dbPath)
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", os.Getenv("DB_DRIVER"))
 	}
@@ -862,25 +845,15 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	// Sanity check: dialect-specific code in services (notably the
-	// vector_stores delete guard) compares Dialector.Name() to "postgres" /
-	// "sqlite" string literals. A future driver swap that produces a
-	// different name (e.g., a wrapper dialect for managed PG) would silently
-	// fall back to the SQLite path, dropping the row-level X-lock. Catching
-	// the mismatch at startup is loud and inexpensive.
-	if name := db.Dialector.Name(); name != "postgres" && name != "sqlite" {
+	// vector_stores delete guard) compares Dialector.Name() to the "postgres"
+	// string literal. A future driver swap that produces a different name
+	// (e.g., a wrapper dialect for managed PG) would silently fall back to the
+	// non-PostgreSQL path, dropping the row-level X-lock. Catching the mismatch
+	// at startup is loud and inexpensive.
+	if name := db.Dialector.Name(); name != "postgres" {
 		return nil, fmt.Errorf(
-			"unsupported gorm dialector %q; expected postgres or sqlite "+
+			"unsupported gorm dialector %q; expected postgres "+
 				"(see vectorStoreService.isPostgres for impact)", name)
-	}
-
-	if os.Getenv("DB_DRIVER") == "sqlite" {
-		sqlDB, err := db.DB()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
-		}
-		if err := sqlDB.Ping(); err != nil {
-			return nil, fmt.Errorf("failed to ping SQLite database: %w", err)
-		}
 	}
 
 	// Run database migrations automatically (optional, can be disabled via env var)
@@ -892,7 +865,6 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		autoRecover := os.Getenv("AUTO_RECOVER_DIRTY") != "false"
 		migrationOpts := database.MigrationOptions{
 			AutoRecoverDirty: autoRecover,
-			SQLiteDBPath:     sqliteDBPath,
 		}
 
 		// Run base migrations (all versioned migrations including embeddings)
@@ -930,14 +902,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	// Configure connection pool parameters
-	if os.Getenv("DB_DRIVER") == "sqlite" {
-		// SQLite only supports one concurrent writer even in WAL mode.
-		// Limiting to a single open connection serialises all DB access and
-		// prevents "database is locked" errors from concurrent goroutines.
-		sqlDB.SetMaxOpenConns(1)
-	} else {
-		sqlDB.SetMaxIdleConns(10)
-	}
+	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(time.Duration(10) * time.Minute)
 
 	return db, nil
@@ -977,8 +942,8 @@ func resolveStorageProviderPending(db *gorm.DB) {
 // existing knowledge bases to the resulting backend.
 //
 // The table, columns and indexes are created by the SQL migrations
-// (migrations/versioned/000068 for Postgres, migrations/sqlite/000000_init for
-// SQLite); this step only handles data that cannot be expressed portably in
+// (migrations/versioned/000068 for Postgres); this step only handles data that
+// cannot be expressed portably in
 // SQL: environment snapshots, JSON→config mapping, AES-encrypted credentials,
 // UUID generation and the per-startup refresh of env-backed aliases.
 // The migration is idempotent: one legacy_alias row per tenant/provider.
@@ -1318,16 +1283,6 @@ func initRetrieveEngineRegistry(
 			log.Errorf("Register postgres retrieve engine failed: %v", err)
 		} else {
 			log.Infof("Register postgres retrieve engine success")
-		}
-	}
-	if slices.Contains(retrieveDriver, "sqlite") {
-		sqliteRepo := sqliteRetrieverRepo.NewSQLiteRetrieveEngineRepository(db)
-		if err := registry.Register(
-			retriever.NewKVHybridRetrieveEngine(sqliteRepo, types.SQLiteRetrieverEngineType),
-		); err != nil {
-			log.Errorf("Register sqlite retrieve engine failed: %v", err)
-		} else {
-			log.Infof("Register sqlite retrieve engine success")
 		}
 	}
 	if slices.Contains(retrieveDriver, "elasticsearch_v8") {

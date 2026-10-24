@@ -4,20 +4,17 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// setupTestDB creates an in-memory SQLite database with tenant table.
+// setupTestDB creates a PostgreSQL test database with tenant table.
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.TenantMember{}))
-	return db
+	return testutil.OpenTestDB(t, &types.Tenant{}, &types.TenantMember{})
 }
 
 func TestDeleteTenant_SoftDeletesMemberships(t *testing.T) {

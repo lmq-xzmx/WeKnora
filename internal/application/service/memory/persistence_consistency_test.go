@@ -49,8 +49,21 @@ func TestMemoryConsistencyReplacementRollsBackAsOneOperation(t *testing.T) {
 	ctx := enabledCtx(t, tr, 1, "alice")
 	old, err := s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "数据库", Content: "使用 MySQL"})
 	require.NoError(t, err)
-	require.NoError(t, db.Exec(`CREATE TRIGGER fail_supersede BEFORE UPDATE OF status ON memory_items
- WHEN NEW.status = 'superseded' BEGIN SELECT RAISE(ABORT, 'injected failure'); END`).Error)
+	// PostgreSQL 用 plpgsql 触发器函数抛错，而不是 SQLite 的 RAISE(ABORT)：
+	// 语义等价 —— status 变成 superseded 的 UPDATE 一旦命中就整条语句失败。
+	require.NoError(t, db.Exec(`
+		CREATE OR REPLACE FUNCTION fail_supersede() RETURNS trigger AS $$
+		BEGIN
+			IF NEW.status = 'superseded' THEN
+				RAISE EXCEPTION 'injected failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+
+		CREATE TRIGGER fail_supersede BEFORE UPDATE OF status ON memory_items
+		FOR EACH ROW EXECUTE FUNCTION fail_supersede();
+	`).Error)
 	_, err = s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "数据库", Content: "已迁移到 PostgreSQL"})
 	require.Error(t, err)
 	items, total, err := s.ListItems(ctx, "", 20, 0)
@@ -109,7 +122,11 @@ func TestMemoryConsistencyRedeliveryWaitsForCrashedWorkerLease(t *testing.T) {
 
 func TestMemoryConsistencyMigrationRestoresLegacyPendingTarget(t *testing.T) {
 	_, db, _ := newMemoryHarness(t)
-	testMemoryConsistencyMigration(t, db, "sqlite")
+	// 生产迁移用 uuid_generate_v4() 做主键默认值，需要 uuid-ossp 扩展。
+	// 扩展装在哪个 schema 取决于 search_path —— 装进测试 schema 的话，
+	// 测试结束 DROP SCHEMA CASCADE 会把它一起带走，不污染共享实例。
+	require.NoError(t, db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
+	testMemoryConsistencyMigration(t, db, "postgres")
 }
 
 func execMemoryMigration(t *testing.T, db *gorm.DB, path string) {
@@ -140,11 +157,12 @@ func testMemoryConsistencyMigration(t *testing.T, db *gorm.DB, dialect string) {
 	}
 	require.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS tenants (id BIGINT PRIMARY KEY)").Error)
 	require.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS messages (id VARCHAR(36) PRIMARY KEY)").Error)
-	baseline := "sqlite/000004_memory"
-	migration := "sqlite/000015_memory_consistency"
-	if dialect == "postgres" {
-		baseline = "versioned/000084_memory"
-		migration = "versioned/000094_memory_consistency"
+	// 只保留 PostgreSQL 迁移路径 —— SQLite 分支已随引擎下线移除，
+	// 这里的 dialect 参数保留是为了让调用方显式声明跑在哪种方言上。
+	baseline := "versioned/000084_memory"
+	migration := "versioned/000094_memory_consistency"
+	if dialect != "postgres" {
+		t.Fatalf("unsupported dialect %q", dialect)
 	}
 	execMemoryMigration(t, db, "../../../../migrations/"+baseline+".up.sql")
 	for _, row := range []struct{ id, key, status, by string }{

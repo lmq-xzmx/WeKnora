@@ -8,32 +8,22 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
-// newMemoryHarness builds a service over a real SQLite database. The write
+// newMemoryHarness builds a service over a real PostgreSQL schema. The write
 // path is mostly about what ends up in the database after a conflict, so a
 // mocked repository would assert the wrong thing.
 func newMemoryHarness(t *testing.T) (*Service, *gorm.DB, *stubTenantRepo) {
 	t.Helper()
-	db, err := gorm.Open(
-		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
-		&gorm.Config{Logger: logger.Discard},
-	)
-	require.NoError(t, err)
-	// Recall records usage on a background goroutine. A shared-cache SQLite
-	// file rejects a concurrent writer, so pin the pool to one connection and
-	// let the driver serialize instead of failing the next read.
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(&types.MemorySubject{}, &types.MemoryItem{}, &types.MemoryTombstone{},
+	db := testutil.OpenTestDB(t,
+		&types.MemorySubject{}, &types.MemoryItem{}, &types.MemoryTombstone{},
 		&types.MemoryTopicStat{}, &types.MemoryDocAffinity{},
-		&types.MemoryItemEmbedding{}, &types.MemoryExtractionSession{}))
+		&types.MemoryItemEmbedding{}, &types.MemoryExtractionSession{},
+	)
 
 	tenantRepo := &stubTenantRepo{
 		configs: map[uint64]*types.MemoryConfig{},

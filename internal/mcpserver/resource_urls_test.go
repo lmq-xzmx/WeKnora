@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,9 +16,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+
+	"github.com/Tencent/WeKnora/internal/testutil"
 )
 
 type resourceURLFixture struct {
@@ -83,17 +82,10 @@ func (f *resourceURLFixture) catalogWrapped() interfaces.FileService {
 func newResourceURLFixture(t *testing.T) *resourceURLFixture {
 	t.Helper()
 	t.Setenv("APP_EXTERNAL_URL", "https://weknora.example/prefix")
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "images.db")), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	require.NoError(t, err)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = sqlDB.Close() })
-	require.NoError(t, db.AutoMigrate(
+	db := testutil.OpenTestDB(t,
 		&types.StoredResource{}, &types.ResourceBinding{}, &types.ResourceAccessGrant{},
 		&types.Knowledge{}, &types.KnowledgeBase{}, &types.Chunk{}, &types.StorageBackend{},
-	))
+	)
 	kb := &types.KnowledgeBase{ID: "kb-1", TenantID: 2, Name: "Shared"}
 	require.NoError(t, db.Create(kb).Error)
 	require.NoError(t, db.Create(&types.Knowledge{
@@ -226,24 +218,30 @@ func TestMCPResourceURLsRequireExistingPreviewPermission(t *testing.T) {
 }
 
 func TestMCPResourceURLsUnrestrictedEndpointCoversSharedKB(t *testing.T) {
-	// ask on an unrestricted endpoint searches the agent's KBs, which can be
-	// shared from another workspace; the caller's viewer grant is what counts.
-	f := newResourceURLFixture(t)
-	f.ep.KnowledgeBaseIDs = nil
-	kbs := f.srv.kbService.(*stubKBService)
-	for i := 0; i < 20; i++ {
-		id := "own-" + strconv.Itoa(i)
-		kbs.kbs[id] = &types.KnowledgeBase{ID: id, TenantID: 1}
-	}
-	result := f.rewrite(mcp.NewToolResultText(f.ref))
-	require.True(t, strings.HasPrefix(result.Content[0].(mcp.TextContent).Text, "https://weknora.example/prefix/r/"))
-	require.Equal(t, 1, kbs.lookups, "only KBs that bind the reference are authorized")
+	// 每个子用例各自建一份 fixture：PostgreSQL 上 schema 由测试名决定，
+	// 同一个测试里开两个 fixture 会落到同一张表上，主键直接冲突。
+	t.Run("kb shared from another workspace", func(t *testing.T) {
+		// ask on an unrestricted endpoint searches the agent's KBs, which can be
+		// shared from another workspace; the caller's viewer grant is what counts.
+		f := newResourceURLFixture(t)
+		f.ep.KnowledgeBaseIDs = nil
+		kbs := f.srv.kbService.(*stubKBService)
+		for i := 0; i < 20; i++ {
+			id := "own-" + strconv.Itoa(i)
+			kbs.kbs[id] = &types.KnowledgeBase{ID: id, TenantID: 1}
+		}
+		result := f.rewrite(mcp.NewToolResultText(f.ref))
+		require.True(t, strings.HasPrefix(result.Content[0].(mcp.TextContent).Text, "https://weknora.example/prefix/r/"))
+		require.Equal(t, 1, kbs.lookups, "only KBs that bind the reference are authorized")
+	})
 
-	f = newResourceURLFixture(t)
-	f.ep.KnowledgeBaseIDs = nil
-	f.srv.kbShareService = &stubKBShareService{}
-	result = f.rewrite(mcp.NewToolResultText(f.ref))
-	require.Equal(t, f.ref, result.Content[0].(mcp.TextContent).Text)
+	t.Run("kb not shared", func(t *testing.T) {
+		f := newResourceURLFixture(t)
+		f.ep.KnowledgeBaseIDs = nil
+		f.srv.kbShareService = &stubKBShareService{}
+		result := f.rewrite(mcp.NewToolResultText(f.ref))
+		require.Equal(t, f.ref, result.Content[0].(mcp.TextContent).Text)
+	})
 }
 
 func TestMCPResourceURLsStructuredContentShapes(t *testing.T) {

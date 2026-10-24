@@ -26,7 +26,7 @@ type ScoreNormalizer interface {
 }
 
 // EngineAwareNormalizer maps vector scores onto [0, 1]. Every driver reports
-// vector scores as cosine similarity: pgvector and sqlite-vec compute
+// vector scores as cosine similarity: pgvector computes
 // 1 - cosine distance, Qdrant, TencentVectorDB, Doris and Milvus (IP or
 // COSINE over L2-normalized embeddings) return the similarity itself, the
 // Milvus L2 path converts the squared distance, Elasticsearch v8 runs a

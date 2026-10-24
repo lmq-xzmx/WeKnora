@@ -1,53 +1,34 @@
 package repository
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestKnowledgeSourceSchemaAllowsObjectStorageURLs(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:knowledge_source_schema?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sqlite handle: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&types.Knowledge{}); err != nil {
-		t.Fatalf("auto migrate knowledge: %v", err)
-	}
+	db := testutil.OpenTestDB(t, &types.Knowledge{})
 
-	var sourceType string
-	rows, err := db.Raw("PRAGMA table_info(knowledges)").Rows()
-	if err != nil {
+	// SQLite 的 PRAGMA table_info 在 PG 上不存在，改查
+	// information_schema.columns —— PG 侧的类型名是 character varying，
+	// 长度则单独存在 character_maximum_length 里。
+	var dataType string
+	var maxLength *int
+	if err := db.Raw(
+		`SELECT data_type, character_maximum_length FROM information_schema.columns
+		 WHERE table_schema = current_schema() AND table_name = 'knowledges' AND column_name = 'source'`,
+	).Row().Scan(&dataType, &maxLength); err != nil {
 		t.Fatalf("inspect knowledge schema: %v", err)
 	}
-
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notNull int
-		var defaultValue any
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
-			t.Fatalf("scan column info: %v", err)
-		}
-		if name == "source" {
-			sourceType = strings.ToLower(typ)
-			break
-		}
+	sourceType := strings.ToLower(dataType)
+	if maxLength != nil {
+		sourceType = fmt.Sprintf("%s(%d)", sourceType, *maxLength)
 	}
-	if err := rows.Close(); err != nil {
-		t.Fatalf("close column info rows: %v", err)
-	}
-	if sourceType != "varchar(2048)" {
-		t.Fatalf("knowledge source column type = %q, want varchar(2048)", sourceType)
+	if sourceType != "character varying(2048)" {
+		t.Fatalf("knowledge source column type = %q, want character varying(2048)", sourceType)
 	}
 
 	longURL := "https://example-bucket.cos.ap-beijing.myqcloud.com/test/" +

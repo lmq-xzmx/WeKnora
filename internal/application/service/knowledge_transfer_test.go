@@ -441,9 +441,20 @@ func TestAdmissionProgressCannotOverwriteFinishedWorker(t *testing.T) {
 
 func TestClonePreservesFailedChunkIndexStatus(t *testing.T) {
 	f := transferFixture(t, access.KBTransferClone)
-	require.NoError(t, f.db.Exec(`CREATE TRIGGER truncate_clone_created_time AFTER INSERT ON knowledges
-        BEGIN UPDATE knowledges SET updated_at = strftime('%Y-%m-%d %H:%M:%S', NEW.updated_at) || '+00:00'
-        WHERE id = NEW.id; END`).Error)
+	// PostgreSQL 用 plpgsql 触发器函数替代 SQLite 的内联 BEGIN...END 语法；
+	// 语义一致 —— 插入后把 updated_at 截断到秒并归一到 UTC。
+	require.NoError(t, f.db.Exec(`
+        CREATE OR REPLACE FUNCTION truncate_clone_created_time() RETURNS trigger AS $$
+        BEGIN
+            UPDATE knowledges SET updated_at = date_trunc('second', NEW.updated_at) AT TIME ZONE 'UTC'
+            WHERE id = NEW.id;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        CREATE TRIGGER truncate_clone_created_time AFTER INSERT ON knowledges
+        FOR EACH ROW EXECUTE FUNCTION truncate_clone_created_time();
+    `).Error)
 	require.NoError(t, f.db.Model(&types.Chunk{}).Where("id = ?", "chunk").Update("index_status", "failed").Error)
 	require.NoError(t, f.svc.executeKnowledgeClone(f.ctx, f.kbs.values["kb"], f.kbs.values["other"], nil))
 	rows, err := f.repo.ListKnowledgeByKnowledgeBaseID(f.ctx, 7, "other")

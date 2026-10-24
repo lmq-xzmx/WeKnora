@@ -4,20 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestAuditLogRepositoryListFiltersKnowledgeBaseScope(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:audit-log-scope?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&types.AuditLog{}); err != nil {
-		t.Fatalf("migrate audit log: %v", err)
-	}
+	db := testutil.OpenTestDB(t, &types.AuditLog{})
 	rows := []*types.AuditLog{
 		{TenantID: 7, Action: types.AuditActionMemberAdded},
 		{TenantID: 7, Action: types.AuditActionKBUpdated, ScopeType: "knowledge_base", ScopeID: "kb-a"},

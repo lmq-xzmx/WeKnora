@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -31,9 +31,7 @@ func (deleteForkWebSearchState) DeleteWebSearchTempKBState(context.Context, stri
 
 func newSessionServiceForForkDeleteTest(t *testing.T) (*sessionService, *gorm.DB, *fakeForkSessionSnapshotDeleter) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Session{}, &types.ForkSnapshotLease{}))
+	db := testutil.OpenTestDB(t, &types.Session{}, &types.ForkSnapshotLease{})
 	snapshots := &fakeForkSessionSnapshotDeleter{}
 	svc := &sessionService{
 		sessionRepo:        repository.NewSessionRepository(db),

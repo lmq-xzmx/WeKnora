@@ -8,21 +8,26 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 // knowledgeTestDDL is the minimal subset of the knowledge schema this
 // suite needs. We avoid AutoMigrate because Knowledge carries multiple
-// JSONB-tagged fields whose SQLite mapping is fragile.
+// JSONB-tagged fields and the DDL here is deliberately narrower than the
+// full model — only the columns the housekeeping sweep touches.
 //
 // Table name is `knowledges` (plural) — that's what migration 000000
 // creates and what GORM's default pluralization expects when the
 // service code uses Model(&types.Knowledge{}).
+//
+// Column types follow PostgreSQL semantics (TIMESTAMPTZ instead of
+// SQLite's DATETIME, BIGSERIAL instead of AUTOINCREMENT) so the DDL
+// matches what the production migration creates.
 const knowledgeTestDDL = `
 CREATE TABLE IF NOT EXISTS knowledges (
     profile TEXT,
@@ -39,15 +44,15 @@ CREATE TABLE IF NOT EXISTS knowledges (
     type            TEXT NOT NULL DEFAULT 'document',
     embedding_model_id TEXT NOT NULL DEFAULT '',
     storage_size    BIGINT NOT NULL DEFAULT 0,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    deleted_at      DATETIME
+    created_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    deleted_at      TIMESTAMPTZ
 );
 `
 
 const housekeepingSpansDDL = `
 CREATE TABLE IF NOT EXISTS knowledge_processing_spans (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              BIGSERIAL PRIMARY KEY,
     knowledge_id    VARCHAR(64) NOT NULL,
     attempt         INTEGER     NOT NULL DEFAULT 1,
     span_id         VARCHAR(64) NOT NULL,
@@ -61,18 +66,18 @@ CREATE TABLE IF NOT EXISTS knowledge_processing_spans (
     error_code      VARCHAR(64),
     error_message   TEXT,
     error_detail    TEXT,
-    started_at      DATETIME,
-    finished_at     DATETIME,
+    started_at      TIMESTAMPTZ,
+    finished_at     TIMESTAMPTZ,
     duration_ms     BIGINT,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (knowledge_id, attempt, span_id)
 );
 `
 
 const housekeepingPendingOpsDDL = `
 CREATE TABLE IF NOT EXISTS task_pending_ops (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          BIGSERIAL PRIMARY KEY,
     tenant_id   INTEGER NOT NULL DEFAULT 0,
     task_type   VARCHAR(64) NOT NULL,
     scope       VARCHAR(32) NOT NULL,
@@ -81,15 +86,14 @@ CREATE TABLE IF NOT EXISTS task_pending_ops (
     dedup_key   VARCHAR(128) NOT NULL DEFAULT '',
     payload     TEXT NOT NULL DEFAULT '{}',
     fail_count  INTEGER NOT NULL DEFAULT 0,
-    enqueued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    claimed_at  DATETIME
+    enqueued_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    claimed_at  TIMESTAMPTZ
 );
 `
 
 func setupHousekeepingDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
+	db := testutil.OpenTestDB(t)
 	require.NoError(t, db.Exec(knowledgeTestDDL).Error)
 	require.NoError(t, db.Exec(housekeepingSpansDDL).Error)
 	require.NoError(t, db.Exec(housekeepingPendingOpsDDL).Error)

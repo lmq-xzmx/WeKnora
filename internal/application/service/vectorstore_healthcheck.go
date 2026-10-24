@@ -52,9 +52,6 @@ func (s *vectorStoreService) TestConnection(
 		return testDorisConnection(ctx, config)
 	case types.OpenSearchRetrieverEngineType:
 		return testOpenSearchConnection(ctx, config)
-	case types.SQLiteRetrieverEngineType:
-		// SQLite is file-based, no remote connection to test
-		return "", nil
 	default:
 		return "", errors.NewBadRequestError(
 			fmt.Sprintf("connection test not supported for engine type: %s", engineType))

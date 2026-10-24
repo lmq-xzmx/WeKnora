@@ -31,7 +31,7 @@ func NewTenantInvitationRepository(db *gorm.DB) interfaces.TenantInvitationRepos
 // authoritative guard against duplicates, but we ALSO pre-check via
 // GetPendingByPair inside a tiny transaction so the typical "click
 // twice fast" case returns a clean sentinel instead of a raw 23505 /
-// SQLITE_CONSTRAINT error string the handler would have to parse.
+// dialect-specific constraint error string the handler would have to parse.
 //
 // The pre-check is best-effort: two concurrent inserts can still race
 // past it, in which case the underlying database error surfaces. The

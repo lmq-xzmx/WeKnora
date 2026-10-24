@@ -86,7 +86,6 @@ var startupEnvVars = []envVarSpec{
 	{name: "DB_PORT"},
 	{name: "DB_USER"},
 	{name: "DB_NAME"},
-	{name: "DB_PATH"}, // sqlite
 	{name: "DB_PASSWORD", sensitive: true},
 	// Cache / queue
 	{name: "REDIS_ADDR"},

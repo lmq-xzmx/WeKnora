@@ -2,22 +2,18 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestPruneEmptyFolderChainsDeletesOnlyEmptyCandidateAncestors(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{}))
+	db := testutil.OpenTestDB(t, &types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{})
 
 	ctx := context.Background()
 	repo := repository.NewWikiPageRepository(db)
@@ -71,9 +67,7 @@ func TestStripWikiInlineChunkCitationsPreservesOrdinaryMarkdown(t *testing.T) {
 }
 
 func TestUpdateWikiPagePersistsAndClearsAliases(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{}))
+	db := testutil.OpenTestDB(t, &types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{})
 
 	ctx := context.Background()
 	repo := repository.NewWikiPageRepository(db)
@@ -174,9 +168,7 @@ func TestParseOutLinks(t *testing.T) {
 }
 
 func TestRepairContentLinks(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{}))
+	db := testutil.OpenTestDB(t, &types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{})
 
 	ctx := context.Background()
 	repo := repository.NewWikiPageRepository(db)
@@ -607,9 +599,7 @@ func TestComputeGraphSubset_EgoRejectsMissingCenter(t *testing.T) {
 }
 
 func TestFindPagesByNormalizedTitleMatchesWhitespace(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{}))
+	db := testutil.OpenTestDB(t, &types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{})
 
 	ctx := context.Background()
 	repo := repository.NewWikiPageRepository(db)
@@ -665,9 +655,7 @@ func TestNormalizeWikiHierarchyKeepsFolderBackedPathVerbatim(t *testing.T) {
 }
 
 func TestMovePageIntoTypeLabelNamedFolderKeepsHierarchy(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{}))
+	db := testutil.OpenTestDB(t, &types.WikiFolder{}, &types.WikiPage{}, &types.WikiPageRevision{})
 
 	ctx := context.Background()
 	repo := repository.NewWikiPageRepository(db)

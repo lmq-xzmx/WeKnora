@@ -7,20 +7,18 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/localsandbox"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
 func hostProjectLookupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.Migrator().DropTable(&types.Session{}))
-	require.NoError(t, db.AutoMigrate(&types.Session{}))
-	return db
+	// 每个测试一个独立 schema，schema 里本来就没有 sessions 表，
+	// 不需要像 SQLite 共享内存库那样先 Drop 再建。
+	return testutil.OpenTestDB(t, &types.Session{})
 }
 
 func insertHostSession(t *testing.T, db *gorm.DB, id, dir string) {

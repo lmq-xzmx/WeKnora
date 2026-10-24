@@ -159,9 +159,7 @@ func (s *vectorStoreService) UpdateStore(ctx context.Context, store *types.Vecto
 //     relationship, not a "shared snapshot" relationship.
 //  2. PostgreSQL: take a row-level X-lock on the vector_stores row via
 //     SELECT … FOR UPDATE so concurrent KB-create requests reading the
-//     same store row block until our transaction completes. SQLite
-//     serializes writes via WAL + max-open-conns=1, so the lock hint is
-//     skipped and we rely on the transaction boundary alone.
+//     same store row block until our transaction completes.
 //  3. Count knowledge_bases rows via the shared CountByVectorStoreID
 //     repository method (tx-aware), which leverages the composite index
 //     (tenant_id, vector_store_id). GORM auto-applies the soft-delete
@@ -189,7 +187,7 @@ func (s *vectorStoreService) DeleteStore(ctx context.Context, tenantID uint64, i
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// tx inherits ctx from WithContext above; no need to re-attach.
 
-		// 1. Lock the store row (PG row-level X-lock; skipped on SQLite).
+		// 1. Lock the store row (PG row-level X-lock).
 		var store types.VectorStore
 		q := tx.Where("id = ? AND tenant_id = ?", id, tenantID)
 		if s.isPostgres(tx) {
@@ -249,7 +247,7 @@ func (s *vectorStoreService) unregisterSafely(ctx context.Context, storeID strin
 
 // isPostgres reports whether the active GORM dialector is PostgreSQL.
 // Used to gate dialect-specific clauses (e.g., SELECT FOR UPDATE) that
-// SQLite would either ignore (recent versions) or fail to compile on.
+// other dialects would either ignore or fail to compile on.
 func (s *vectorStoreService) isPostgres(db *gorm.DB) bool {
 	return db != nil && db.Dialector != nil && db.Dialector.Name() == "postgres"
 }
@@ -471,8 +469,6 @@ func validateConnectionConfig(engineType types.RetrieverEngineType, config types
 		if config.Addr == "" {
 			return errors.NewValidationError("addr is required for opensearch")
 		}
-	case types.SQLiteRetrieverEngineType:
-		// No connection config needed for SQLite
 	}
 	return nil
 }
@@ -529,9 +525,6 @@ func validateConnectionAddrSSRF(engineType types.RetrieverEngineType, config typ
 			return err
 		}
 		return check(config.GrpcAddress)
-	case types.SQLiteRetrieverEngineType:
-		// File-based engine; no remote address to validate.
-		return nil
 	default:
 		// Fail closed. Engines without a DB-store address mapping (postgres,
 		// infinity, elasticfaiss, and any future engine) must not silently

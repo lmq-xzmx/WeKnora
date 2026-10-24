@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
@@ -12,8 +11,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+
+	"github.com/Tencent/WeKnora/internal/testutil"
 )
 
 type transferFailureKnowledge struct {
@@ -24,12 +23,7 @@ type transferFailureKnowledge struct {
 func (s transferFailureKnowledge) GetRepository() interfaces.KnowledgeRepository { return s.repo }
 
 func TestProcessingFailureCallbackDoesNotFollowMovedDocuments(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "callback.db")), &gorm.Config{})
-	require.NoError(t, err)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-	require.NoError(t, db.AutoMigrate(&types.Knowledge{}))
+	db := testutil.OpenTestDB(t, &types.Knowledge{})
 	repo := repository.NewKnowledgeRepository(db)
 	callback := newDeadLetterKnowledgeFailer(transferFailureKnowledge{repo: repo}, nil)
 	for _, tc := range []struct {

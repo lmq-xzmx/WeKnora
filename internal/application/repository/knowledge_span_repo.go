@@ -66,7 +66,7 @@ func (r *knowledgeSpanRepository) Upsert(ctx context.Context, row *types.Knowled
 		row.Attempt = 1
 	}
 	// Error fields may originate from third-party parser/model responses.
-	// Normalize them at the persistence boundary so SQLite/PostgreSQL and the
+	// Normalize them at the persistence boundary so PostgreSQL and the
 	// tracing API never receive malformed UTF-8.
 	row.ErrorCode = common.CleanInvalidUTF8(row.ErrorCode)
 	row.ErrorMessage = common.CleanInvalidUTF8(row.ErrorMessage)
@@ -171,7 +171,7 @@ func (r *knowledgeSpanRepository) GetSpan(ctx context.Context, knowledgeID strin
 // zero rows (fixed point reached) or after a generous depth bound.
 //
 // Postgres-specific WITH RECURSIVE would be denser but harder to test on
-// the SQLite Lite backend. The iterative path stays portable.
+// a Lite backend. The iterative path stays portable.
 func (r *knowledgeSpanRepository) CancelDescendants(ctx context.Context, knowledgeID string, attempt int, parentSpanID, reason string) (int64, error) {
 	reason = common.CleanInvalidUTF8(reason)
 	frontier := []string{parentSpanID}
@@ -280,7 +280,7 @@ func (r *knowledgeSpanRepository) LastActivity(
 	if len(knowledgeIDs) == 0 {
 		return out, nil
 	}
-	// MAX() comes back as a string on SQLite, so scan text and parse.
+	// MAX() may come back as a string on some dialects, so scan text and parse.
 	var rows []struct {
 		KnowledgeID string `gorm:"column:knowledge_id"`
 		LastSeen    string `gorm:"column:last_seen"`
@@ -302,7 +302,7 @@ func (r *knowledgeSpanRepository) LastActivity(
 }
 
 // ParseAggregateTime parses a timestamp read back through an SQL aggregate,
-// in the formats Postgres and SQLite emit.
+// in the formats the supported dialects emit.
 func ParseAggregateTime(s string) (time.Time, bool) {
 	if s == "" {
 		return time.Time{}, false

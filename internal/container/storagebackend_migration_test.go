@@ -3,29 +3,26 @@ package container
 import (
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestMigrateLegacyStorageBackends(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	// Schema is owned by the SQL migrations in production; provision it here so
-	// the test exercises only the data-migration logic.
+	// 表结构在生产里由 SQL 迁移负责，这里手工建最小可用表，
+	// 让用例只覆盖数据迁移逻辑本身。
+	db := testutil.OpenTestDB(t, &types.StorageBackend{})
 	require.NoError(t, db.Exec(`CREATE TABLE tenants (
-		id INTEGER PRIMARY KEY, name TEXT, storage_engine_config TEXT,
-		default_storage_backend_id TEXT, updated_at DATETIME, deleted_at DATETIME
+		id BIGINT PRIMARY KEY, name TEXT, storage_engine_config JSONB,
+		default_storage_backend_id VARCHAR(36), updated_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ
 	)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE knowledge_bases (
-    profile_config TEXT,
-    generated_profile TEXT,
-		id TEXT PRIMARY KEY, tenant_id INTEGER, storage_provider_config TEXT,
-		storage_backend_id TEXT, cos_config TEXT, updated_at DATETIME, deleted_at DATETIME
+    profile_config JSON,
+    generated_profile JSON,
+		id TEXT PRIMARY KEY, tenant_id BIGINT, storage_provider_config JSONB,
+		storage_backend_id VARCHAR(36), cos_config JSON, updated_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ
 	)`).Error)
-	require.NoError(t, db.AutoMigrate(&types.StorageBackend{}))
 	tenantConfig, err := (&types.StorageEngineConfig{DefaultProvider: "local", Local: &types.LocalEngineConfig{PathPrefix: "workspace-a"}}).Value()
 	require.NoError(t, err)
 	providerConfig, err := (types.StorageProviderConfig{Provider: "local"}).Value()

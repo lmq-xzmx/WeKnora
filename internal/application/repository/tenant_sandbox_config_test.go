@@ -5,19 +5,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func newSandboxConfigTestRepo(t *testing.T) (TenantSandboxConfigRepository, *gorm.DB) {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.TenantSandboxConfigEntity{}))
+	db := testutil.OpenTestDB(t, &types.TenantSandboxConfigEntity{})
 	// AutoMigrate cannot express the partial unique index, so add it here to
 	// match the production migration.
 	require.NoError(t, db.Exec(

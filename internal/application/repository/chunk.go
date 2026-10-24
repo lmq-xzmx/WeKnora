@@ -68,16 +68,6 @@ func (r *chunkRepository) CreateChunks(ctx context.Context, chunks []*types.Chun
 	}
 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// SQLite doesn't support autoIncrement on non-PK columns, so SeqIDs are
-		// pre-assigned from MAX(seq_id). Doing it inside the write transaction
-		// keeps the read and the insert on the same connection.
-		// PostgreSQL uses a DB sequence — skip to avoid duplicate key races.
-		if tx.Name() == "sqlite" {
-			if err := types.AssignChunkSeqIDs(tx, chunks); err != nil {
-				return fmt.Errorf("failed to assign chunk seq_ids: %w", err)
-			}
-		}
-
 		// Select("*") ensures zero-value fields (IsEnabled=false, Flags=0) are
 		// explicitly inserted, bypassing GORM's default value behavior.
 		// SeqID=0 is skipped by GORM automatically (autoIncrement tag).
@@ -832,7 +822,7 @@ func (r *chunkRepository) ListAllFAQChunksWithMetadataByKnowledgeBaseID(
 
 // FindFAQChunkWithDuplicateQuestion finds a single FAQ chunk whose standard_question or
 // similar_questions overlap with the given question list.
-// Uses dialect-specific JSON queries (MySQL / PostgreSQL / SQLite).
+// Uses dialect-specific JSON queries (MySQL / PostgreSQL).
 func (r *chunkRepository) FindFAQChunkWithDuplicateQuestion(
 	ctx context.Context,
 	tenantID uint64,
@@ -873,20 +863,12 @@ func (r *chunkRepository) FindFAQChunkWithDuplicateQuestion(
 			args = append(args, string(jsonVal))
 		}
 		db = db.Where(strings.Join(parts, " OR "), args...)
-	case "postgres":
+	default: // postgres
 		db = db.Where(
 			"(metadata->>'standard_question' IN ? OR EXISTS ("+
 				"SELECT 1 FROM jsonb_array_elements_text("+
 				"COALESCE(metadata->'similar_questions', '[]'::jsonb)) elem "+
 				"WHERE elem.value IN ?))",
-			questions, questions)
-	default: // sqlite
-		db = db.Where(
-			"(json_extract(metadata, '$.standard_question') IN ? OR EXISTS ("+
-				"SELECT 1 FROM json_each("+
-				"CASE WHEN json_extract(metadata, '$.similar_questions') IS NOT NULL "+
-				"THEN json_extract(metadata, '$.similar_questions') ELSE '[]' END) "+
-				"WHERE value IN ?))",
 			questions, questions)
 	}
 
@@ -1007,9 +989,6 @@ func (r *chunkRepository) UpdateChunkFlagsBatch(
 	}
 
 	nowFunc := "NOW()"
-	if r.db.Dialector.Name() == "sqlite" {
-		nowFunc = "datetime('now')"
-	}
 	sql := fmt.Sprintf(`
 	UPDATE chunks
     SET flags = (flags | (%s)) & ~(%s),
@@ -1361,14 +1340,6 @@ func (r *chunkRepository) ListRecentDocumentChunksWithQuestions(
 
 	// Query chunks that have non-empty generated_questions in metadata
 	switch r.db.Name() {
-	case "postgres":
-		if err := baseQuery.
-			Where("metadata IS NOT NULL AND metadata::text != '{}' AND jsonb_array_length(COALESCE(metadata->'generated_questions', '[]'::jsonb)) > 0").
-			Order(orderClause).
-			Limit(limit).
-			Find(&chunks).Error; err != nil {
-			return nil, err
-		}
 	case "mysql":
 		if err := baseQuery.
 			Where("metadata IS NOT NULL AND JSON_LENGTH(JSON_EXTRACT(metadata, '$.generated_questions')) > 0").
@@ -1377,9 +1348,9 @@ func (r *chunkRepository) ListRecentDocumentChunksWithQuestions(
 			Find(&chunks).Error; err != nil {
 			return nil, err
 		}
-	default: // sqlite
+	default: // postgres
 		if err := baseQuery.
-			Where("metadata IS NOT NULL AND json_array_length(json_extract(metadata, '$.generated_questions')) > 0").
+			Where("metadata IS NOT NULL AND metadata::text != '{}' AND jsonb_array_length(COALESCE(metadata->'generated_questions', '[]'::jsonb)) > 0").
 			Order(orderClause).
 			Limit(limit).
 			Find(&chunks).Error; err != nil {

@@ -4,30 +4,32 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/models/api"
 	modelruntime "github.com/Tencent/WeKnora/internal/models/runtime"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 var emptyOverlay = json.RawMessage(`{"providers":{}}`)
 
 func catalogFixture(t *testing.T) (*ModelCatalogService, *repository.ModelCatalogRepository) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "catalog.db")), &gorm.Config{})
+	db := testutil.OpenTestDB(t)
+	// 用生产迁移的 PostgreSQL DDL 建表（含单例行的初始 INSERT），
+	// 而不是 AutoMigrate —— 测试要跑在和线上一致的表定义上。
+	ddl, err := os.ReadFile("../../../migrations/versioned/000111_model_catalog_config.up.sql")
 	require.NoError(t, err)
-	ddl, err := os.ReadFile("../../../migrations/sqlite/000031_model_catalog_config.up.sql")
-	require.NoError(t, err)
-	require.NoError(t, db.Exec(string(ddl)).Error)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = sqlDB.Close() })
+	for _, stmt := range strings.Split(string(ddl), ";") {
+		if strings.TrimSpace(stmt) == "" {
+			continue
+		}
+		require.NoError(t, db.Exec(stmt).Error, stmt)
+	}
 	repo := repository.NewModelCatalogRepository(db)
 	base := modelruntime.New()
 	deployment := `{"providers":{"openai":{` +

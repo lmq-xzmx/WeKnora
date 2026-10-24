@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -11,47 +12,22 @@ import (
 	"gorm.io/gorm"
 )
 
-const knowledgeTagTestDDL = `
-CREATE TABLE IF NOT EXISTS knowledges (
-    profile TEXT,
-    id VARCHAR(36) PRIMARY KEY,
-    tenant_id INTEGER NOT NULL,
-    knowledge_base_id VARCHAR(36) NOT NULL,
-    type VARCHAR(50) NOT NULL DEFAULT 'file',
-    title VARCHAR(255) NOT NULL DEFAULT '',
-    parse_status VARCHAR(50) NOT NULL DEFAULT 'completed',
-    deleted_at DATETIME
-);
-CREATE TABLE IF NOT EXISTS knowledge_tags (
-    id VARCHAR(36) PRIMARY KEY,
-    seq_id INTEGER NOT NULL,
-    tenant_id INTEGER NOT NULL,
-    knowledge_base_id VARCHAR(36) NOT NULL,
-    name VARCHAR(128) NOT NULL,
-    color VARCHAR(32),
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS knowledge_tag_relations (
-    knowledge_id VARCHAR(36) NOT NULL,
-    tag_id VARCHAR(36) NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (knowledge_id, tag_id)
-);
-CREATE TABLE IF NOT EXISTS chunks (
-    id VARCHAR(36) PRIMARY KEY,
-    tenant_id INTEGER NOT NULL,
-    knowledge_base_id VARCHAR(36) NOT NULL,
-    tag_id VARCHAR(36),
-    deleted_at DATETIME
-);
-`
-
+// setupKnowledgeTagTestDB opens a PostgreSQL test database with the
+// knowledge / tag / relation tables.
+//
+// 以前这里内联了一份 SQLite 方言的 DDL（DATETIME 列、没有自增 seq_id）。
+// PostgreSQL 上 AutoMigrate 能直接按 types 的 gorm tag 建表，所以改用 AutoMigrate。
 func setupKnowledgeTagTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db := setupKnowledgeTestDB(t)
-	require.NoError(t, db.Exec(knowledgeTagTestDDL).Error)
+	db := testutil.OpenTestDB(t,
+		&types.Knowledge{}, &types.KnowledgeTag{}, &types.KnowledgeTagRelation{},
+		&types.Chunk{},
+	)
+	// 生产里 knowledges.custom_metadata 是 NOT NULL DEFAULT '{}'，types 的 gorm
+	// tag 只写了 not null，AutoMigrate 建出来的列没有默认值，裸 SQL 插入不带
+	// 这一列就会违反非空约束。
+	require.NoError(t, db.Exec(
+		`ALTER TABLE knowledges ALTER COLUMN custom_metadata SET DEFAULT '{}'::jsonb`).Error)
 	return db
 }
 

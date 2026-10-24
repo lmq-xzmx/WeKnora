@@ -22,10 +22,10 @@ const fallbackVectorScanCap = 5000
 // vectorColumnReady reports whether the database can do the distance
 // arithmetic itself.
 //
-// Checked once and cached. It is false on SQLite, and false on a PostgreSQL
-// deployment that never installed pgvector because its retrieval driver does
-// not use it — both of which keep working through the fallback below, just
-// with every vector crossing the wire.
+// Checked once and cached. It is false on a PostgreSQL deployment that never
+// installed pgvector because its retrieval driver does not use it, which
+// keeps working through the fallback below, just with every vector crossing
+// the wire.
 func (r *memoryRepository) vectorColumnReady() bool {
 	r.vectorOnce.Do(func() {
 		if r.db == nil || r.db.Dialector == nil || r.db.Dialector.Name() != "postgres" {

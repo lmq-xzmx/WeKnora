@@ -2,20 +2,19 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/datasource"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-type sqliteDataSourceDeleteFixture struct {
+type dataSourceDeleteFixture struct {
 	db          *gorm.DB
 	dsRepo      interfaces.DataSourceRepository
 	syncLogRepo interfaces.SyncLogRepository
@@ -25,19 +24,17 @@ type sqliteDataSourceDeleteFixture struct {
 	runningLog  *types.SyncLog
 }
 
-func newSQLiteDataSourceDeleteFixture(t *testing.T) *sqliteDataSourceDeleteFixture {
+func newDataSourceDeleteFixture(t *testing.T) *dataSourceDeleteFixture {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "weknora.db")), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.DataSource{}, &types.SyncLog{}))
+	db := testutil.OpenTestDB(t, &types.DataSource{}, &types.SyncLog{})
 
 	dsRepo := repository.NewDataSourceRepository(db)
 	syncLogRepo := repository.NewSyncLogRepository(db)
 	ds := &types.DataSource{
-		ID:              "ds-sqlite-delete",
+		ID:              "ds-delete",
 		TenantID:        1,
-		KnowledgeBaseID: "kb-sqlite-delete",
-		Name:            "SQLite delete",
+		KnowledgeBaseID: "kb-delete",
+		Name:            "delete",
 		Type:            types.ConnectorTypeFeishu,
 		Status:          types.DataSourceStatusActive,
 		SyncSchedule:    "0 0 * * * *",
@@ -62,7 +59,7 @@ func newSQLiteDataSourceDeleteFixture(t *testing.T) *sqliteDataSourceDeleteFixtu
 	require.NoError(t, scheduler.AddOrUpdate(ds))
 	require.Equal(t, 1, scheduler.EntryCount())
 
-	return &sqliteDataSourceDeleteFixture{
+	return &dataSourceDeleteFixture{
 		db:          db,
 		dsRepo:      dsRepo,
 		syncLogRepo: syncLogRepo,
@@ -73,8 +70,8 @@ func newSQLiteDataSourceDeleteFixture(t *testing.T) *sqliteDataSourceDeleteFixtu
 	}
 }
 
-func TestDataSourceServiceDeleteSQLiteCleansUpAfterSoftDelete(t *testing.T) {
-	fixture := newSQLiteDataSourceDeleteFixture(t)
+func TestDataSourceServiceDeleteCleansUpAfterSoftDelete(t *testing.T) {
+	fixture := newDataSourceDeleteFixture(t)
 	svc := &DataSourceService{
 		dsRepo:      fixture.dsRepo,
 		syncLogRepo: fixture.syncLogRepo,
@@ -97,14 +94,22 @@ func TestDataSourceServiceDeleteSQLiteCleansUpAfterSoftDelete(t *testing.T) {
 }
 
 func TestDataSourceServiceDeleteKeepsCleanupStateWhenSoftDeleteFails(t *testing.T) {
-	fixture := newSQLiteDataSourceDeleteFixture(t)
+	fixture := newDataSourceDeleteFixture(t)
+	// PostgreSQL 用 plpgsql 触发器函数报错，而不是 SQLite 的 RAISE(FAIL)：
+	// 语义等价 —— 软删除 UPDATE 一旦命中目标行就让语句失败。
 	require.NoError(t, fixture.db.Exec(`
+		CREATE OR REPLACE FUNCTION fail_datasource_soft_delete() RETURNS trigger AS $$
+		BEGIN
+			IF NEW.id = 'ds-delete' THEN
+				RAISE EXCEPTION 'forced soft delete failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+
 		CREATE TRIGGER fail_datasource_soft_delete
 		BEFORE UPDATE OF deleted_at ON data_sources
-		WHEN NEW.id = 'ds-sqlite-delete'
-		BEGIN
-			SELECT RAISE(FAIL, 'forced soft delete failure');
-		END;
+		FOR EACH ROW EXECUTE FUNCTION fail_datasource_soft_delete();
 	`).Error)
 	svc := &DataSourceService{
 		dsRepo:      fixture.dsRepo,
@@ -128,13 +133,13 @@ func TestDataSourceServiceDeleteKeepsCleanupStateWhenSoftDeleteFails(t *testing.
 	assert.Equal(t, types.SyncLogStatusRunning, running.Status)
 }
 
-func TestDeleteKnowledgeBaseCleansUpSQLiteDataSources(t *testing.T) {
-	fixture := newSQLiteDataSourceDeleteFixture(t)
+func TestDeleteKnowledgeBaseCleansUpPersistedDataSources(t *testing.T) {
+	fixture := newDataSourceDeleteFixture(t)
 	kbRepo := &kbDeleteKBRepo{fakeKBRepo: *newFakeKBRepo()}
 	kbRepo.rows[fixture.ds.KnowledgeBaseID] = &types.KnowledgeBase{
 		ID:       fixture.ds.KnowledgeBaseID,
 		TenantID: fixture.ds.TenantID,
-		Name:     "SQLite delete",
+		Name:     "delete",
 	}
 	svc := &knowledgeBaseService{
 		repo:        kbRepo,

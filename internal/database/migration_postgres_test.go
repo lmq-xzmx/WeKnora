@@ -13,6 +13,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// repoRoot 返回仓库根目录。迁移脚本以 "file://migrations/versioned" 这种
+// 相对路径定位，所以测试必须先切到仓库根再跑迁移。
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	require.NoError(t, err)
+	return root
+}
+
+// chdirAndRestore 切到指定目录，测试结束时切回去。
+func chdirAndRestore(t *testing.T, dir string) {
+	t.Helper()
+	previousDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(previousDir) })
+}
+
 // TestPostgresMigrationsServeAgentHistory runs the versioned migrations against
 // a real PostgreSQL. Skipped unless WEKNORA_MIGRATION_TEST_POSTGRES_DSN points
 // at a disposable database, for example:
@@ -29,7 +47,7 @@ func TestPostgresMigrationsServeAgentHistory(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set WEKNORA_MIGRATION_TEST_POSTGRES_DSN to run PostgreSQL migration tests")
 	}
-	root := sqliteRepoRoot(t)
+	root := repoRoot(t)
 	chdirAndRestore(t, root)
 
 	require.NoError(t, RunMigrationsWithOptions(dsn, MigrationOptions{}))

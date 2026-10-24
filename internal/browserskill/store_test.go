@@ -3,29 +3,21 @@ package browserskill
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+
+	"github.com/Tencent/WeKnora/internal/testutil"
 )
 
 func testStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := gorm.Open(
-		sqlite.Open(filepath.Join(t.TempDir(), "browser.db")+"?_busy_timeout=5000&_journal_mode=WAL"),
-		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
-	)
-	require.NoError(t, err)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	sqlDB.SetMaxOpenConns(1)
-	t.Cleanup(func() { _ = sqlDB.Close() })
-	migration, err := os.ReadFile("../../migrations/sqlite/000014_browser_authorization.up.sql")
+	db := testutil.OpenTestDB(t)
+	// 目录里的表结构由版本化迁移负责，这里直接执行线上那份迁移，
+	// 保证用例跑的是 PostgreSQL 上真实生效的 DDL。
+	migration, err := os.ReadFile("../../migrations/versioned/000093_browser_authorization.up.sql")
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(string(migration)).Error)
 	return &Store{db: db}
@@ -156,15 +148,16 @@ func TestSuspendedMembershipInvalidatesDevice(t *testing.T) {
 	require.NoError(
 		t,
 		s.db.Exec(
-			`CREATE TABLE users (id TEXT PRIMARY KEY,is_active BOOLEAN,deleted_at DATETIME,
- can_access_all_tenants BOOLEAN DEFAULT 0,tenant_id BIGINT DEFAULT 1)`,
+			`CREATE TABLE users (id TEXT PRIMARY KEY,is_active BOOLEAN,deleted_at TIMESTAMPTZ,
+ can_access_all_tenants BOOLEAN DEFAULT false,tenant_id BIGINT DEFAULT 1)`,
 		).Error,
 	)
 	require.NoError(
 		t,
-		s.db.Exec(`CREATE TABLE tenant_members (user_id TEXT,tenant_id BIGINT,status TEXT,deleted_at DATETIME)`).Error,
+		s.db.Exec(`CREATE TABLE tenant_members (user_id TEXT,tenant_id BIGINT,status TEXT,deleted_at TIMESTAMPTZ)`).Error,
 	)
-	require.NoError(t, s.db.Exec(`INSERT INTO users(id,is_active) VALUES ('alice',1)`).Error)
+	// PostgreSQL 的 boolean 列只能写 true/false，写 1/0 会直接报类型错误。
+	require.NoError(t, s.db.Exec(`INSERT INTO users(id,is_active) VALUES ('alice',true)`).Error)
 	require.NoError(
 		t,
 		s.db.Exec(`INSERT INTO tenant_members(user_id,tenant_id,status) VALUES ('alice',1,'active')`).Error,
@@ -203,17 +196,17 @@ func TestCrossTenantAdministratorMembership(t *testing.T) {
 	require.NoError(
 		t,
 		s.db.Exec(
-			`CREATE TABLE users (id TEXT PRIMARY KEY,is_active BOOLEAN,deleted_at DATETIME,
+			`CREATE TABLE users (id TEXT PRIMARY KEY,is_active BOOLEAN,deleted_at TIMESTAMPTZ,
  can_access_all_tenants BOOLEAN,tenant_id BIGINT)`,
 		).Error,
 	)
 	require.NoError(
 		t,
-		s.db.Exec(`CREATE TABLE tenant_members (user_id TEXT,tenant_id BIGINT,status TEXT,deleted_at DATETIME)`).Error,
+		s.db.Exec(`CREATE TABLE tenant_members (user_id TEXT,tenant_id BIGINT,status TEXT,deleted_at TIMESTAMPTZ)`).Error,
 	)
-	require.NoError(t, s.db.Exec(`INSERT INTO users VALUES ('admin',1,NULL,1,1)`).Error)
+	require.NoError(t, s.db.Exec(`INSERT INTO users VALUES ('admin',true,NULL,true,1)`).Error)
 	require.NoError(t, s.member(ctx, Scope{2, "admin"}))
 	require.ErrorIs(t, s.member(ctx, Scope{1, "admin"}), ErrAuthorization)
-	require.NoError(t, s.db.Exec(`UPDATE users SET can_access_all_tenants=0`).Error)
+	require.NoError(t, s.db.Exec(`UPDATE users SET can_access_all_tenants=false`).Error)
 	require.ErrorIs(t, s.member(ctx, Scope{2, "admin"}), ErrAuthorization)
 }

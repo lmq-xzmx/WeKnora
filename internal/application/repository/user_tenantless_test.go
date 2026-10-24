@@ -4,19 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func TestUserRepositoryTenantlessCreateAndUpdateKeepNullTenantID(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:user_tenantless?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&types.Tenant{}, &types.User{}); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := testutil.OpenTestDB(t, &types.Tenant{}, &types.User{})
 
 	repo := NewUserRepository(db)
 	user := &types.User{

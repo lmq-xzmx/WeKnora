@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/sandbox"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -433,9 +433,7 @@ func TestStageSessionAttachmentsKeepsExistingURLWithoutLookup(t *testing.T) {
 
 func stagingTempDocDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.TemporaryDocument{}))
+	db := testutil.OpenTestDB(t, &types.TemporaryDocument{})
 	return db
 }
 

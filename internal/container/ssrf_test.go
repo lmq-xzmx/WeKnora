@@ -34,7 +34,6 @@ func TestValidateRuntimeVectorStoreAddressesRejectsUnsafeEndpoints(t *testing.T)
 func TestValidateRuntimeVectorStoreAddressesAllowsNonNetworkEngines(t *testing.T) {
 	for _, engineType := range []types.RetrieverEngineType{
 		types.PostgresRetrieverEngineType,
-		types.SQLiteRetrieverEngineType,
 	} {
 		if err := validateRuntimeVectorStoreAddresses(types.VectorStore{EngineType: engineType}); err != nil {
 			t.Fatalf("unexpected %s validation error: %v", engineType, err)

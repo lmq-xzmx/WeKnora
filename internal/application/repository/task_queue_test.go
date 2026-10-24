@@ -6,83 +6,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// taskPendingOpsTestDDL mirrors the production schema in
-// migrations/versioned/000041_task_queue_and_wiki_indexes.up.sql but uses
-// SQLite-compatible types. INTEGER PRIMARY KEY AUTOINCREMENT preserves
-// the monotonically-increasing ID semantics PeekBatch/cursor pagination
-// rely on. JSONB → TEXT is fine since GORM round-trips json.RawMessage
-// as bytes either way.
-const taskPendingOpsTestDDL = `
-CREATE TABLE IF NOT EXISTS task_pending_ops (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    tenant_id   INTEGER NOT NULL,
-    task_type   VARCHAR(64) NOT NULL,
-    scope       VARCHAR(32) NOT NULL,
-    scope_id    VARCHAR(64) NOT NULL,
-    op          VARCHAR(32) NOT NULL,
-    dedup_key   VARCHAR(128) NOT NULL DEFAULT '',
-    payload     TEXT NOT NULL DEFAULT '{}',
-    fail_count  INTEGER NOT NULL DEFAULT 0,
-    enqueued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    claimed_at  DATETIME
-);
-`
-
-const taskDeadLettersTestDDL = `
-CREATE TABLE IF NOT EXISTS task_dead_letters (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    tenant_id   INTEGER NOT NULL,
-    task_type   VARCHAR(64) NOT NULL,
-    scope       VARCHAR(32) NOT NULL,
-    scope_id    VARCHAR(64) NOT NULL,
-    related_id  VARCHAR(64) NOT NULL DEFAULT '',
-    payload     TEXT NOT NULL,
-    last_error  TEXT NOT NULL DEFAULT '',
-    fail_count  INTEGER NOT NULL,
-    failed_at   DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-`
-
-const taskQueueKnowledgeBaseTestDDL = `
-CREATE TABLE IF NOT EXISTS knowledge_bases (
-    profile_config TEXT,
-    generated_profile TEXT,
-    id         VARCHAR(64) PRIMARY KEY,
-    tenant_id  INTEGER NOT NULL,
-    deleted_at DATETIME
-);
-`
-
-const taskQueueKnowledgeTestDDL = `
-CREATE TABLE IF NOT EXISTS knowledges (
-    profile TEXT,
-    id                     VARCHAR(64) PRIMARY KEY,
-    tenant_id              INTEGER NOT NULL,
-    knowledge_base_id      VARCHAR(64) NOT NULL,
-    parse_status           VARCHAR(32) NOT NULL,
-    pending_subtasks_count INTEGER NOT NULL DEFAULT 0,
-    error_message          TEXT,
-    processed_at           DATETIME,
-    updated_at             DATETIME,
-    deleted_at             DATETIME
-);
-`
-
-func setupTaskQueueTestDB(t *testing.T) *gorm.DB {
+// setupTaskQueueTestDB opens a PostgreSQL test database with the queue
+// tables. Callers that also need the knowledge-side tables pass them as
+// extra models.
+func setupTaskQueueTestDB(t *testing.T, extra ...interface{}) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.Exec(taskPendingOpsTestDDL).Error)
-	require.NoError(t, db.Exec(taskDeadLettersTestDDL).Error)
-	return db
+	models := append([]interface{}{&types.TaskPendingOp{}, &types.TaskDeadLetter{}}, extra...)
+	return testutil.OpenTestDB(t, models...)
 }
 
 func makePendingOp(taskType, scope, scopeID, op, dedup string, payload []byte) *types.TaskPendingOp {
@@ -99,12 +37,15 @@ func makePendingOp(taskType, scope, scopeID, op, dedup string, payload []byte) *
 
 func setupFinalizingPendingOpTest(t *testing.T) (*gorm.DB, interfaces.TaskPendingOpsFinalizingSeeder) {
 	t.Helper()
-	db := setupTaskQueueTestDB(t)
+	db := setupTaskQueueTestDB(t, &types.KnowledgeBase{}, &types.Knowledge{})
 	repo := NewTaskPendingOpsRepository(db)
 	seeder, ok := repo.(interfaces.TaskPendingOpsFinalizingSeeder)
 	require.True(t, ok, "task pending repository must support atomic finalizing handoff")
-	require.NoError(t, db.Exec(taskQueueKnowledgeBaseTestDDL).Error)
-	require.NoError(t, db.Exec(taskQueueKnowledgeTestDDL).Error)
+	// knowledges.custom_metadata 在生产是 NOT NULL DEFAULT '{}'，而 types 的
+	// gorm tag 只写了 not null，AutoMigrate 建出来的列没有默认值，
+	// 裸 SQL 插入不带这一列就会报错。
+	require.NoError(t, db.Exec(
+		`ALTER TABLE knowledges ALTER COLUMN custom_metadata SET DEFAULT '{}'::jsonb`).Error)
 	require.NoError(t, db.Exec(
 		`INSERT INTO knowledge_bases (id, tenant_id) VALUES ('kb-1', 1)`,
 	).Error)
@@ -383,22 +324,11 @@ func TestTaskPendingOps_DeleteByScope_RejectsMissingScope(t *testing.T) {
 }
 
 func TestTaskPendingOps_EnqueueIfKnowledgeBaseActive(t *testing.T) {
-	db := setupTaskQueueTestDB(t)
-	require.NoError(t, db.Exec(`CREATE TABLE knowledge_bases (
-    profile_config TEXT,
-    generated_profile TEXT,
-		id VARCHAR(64) PRIMARY KEY,
-		tenant_id INTEGER NOT NULL,
-		deleted_at DATETIME
-	)`).Error)
+	db := setupTaskQueueTestDB(t, &types.KnowledgeBase{}, &types.Tenant{})
 	require.NoError(t, db.Exec(
 		"INSERT INTO knowledge_bases (id, tenant_id, deleted_at) VALUES (?, ?, NULL), (?, ?, ?), (?, ?, NULL)",
 		"kb-active", 1, "kb-deleted", 1, time.Now(), "kb-t2", 2,
 	).Error)
-	require.NoError(t, db.Exec(`CREATE TABLE tenants (
-		id INTEGER PRIMARY KEY,
-		deleted_at DATETIME
-	)`).Error)
 	require.NoError(t, db.Exec(
 		"INSERT INTO tenants (id, deleted_at) VALUES (?, NULL), (?, ?)",
 		1, 2, time.Now(),
@@ -945,8 +875,9 @@ func TestTaskDeadLetter_DeleteByID_IsIdempotent(t *testing.T) {
 
 func setupDrainTest(t *testing.T) (*gorm.DB, interfaces.TaskPendingOpsRepository, interfaces.TaskPendingOpsDrainer) {
 	t.Helper()
-	db := setupTaskQueueTestDB(t)
-	require.NoError(t, db.Exec(taskQueueKnowledgeTestDDL).Error)
+	db := setupTaskQueueTestDB(t, &types.Knowledge{})
+	require.NoError(t, db.Exec(
+		`ALTER TABLE knowledges ALTER COLUMN custom_metadata SET DEFAULT '{}'::jsonb`).Error)
 	repo := NewTaskPendingOpsRepository(db)
 	drainer, ok := repo.(interfaces.TaskPendingOpsDrainer)
 	require.True(t, ok)

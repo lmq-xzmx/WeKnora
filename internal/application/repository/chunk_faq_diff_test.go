@@ -82,7 +82,7 @@ func TestDiffFAQChunkIDsByContentHash_emptySide(t *testing.T) {
 	assert.Empty(t, matched)
 }
 
-func TestFAQChunkDiff_SQLite(t *testing.T) {
+func TestFAQChunkDiff(t *testing.T) {
 	db := setupChunkTestDB(t)
 	repo := NewChunkRepository(db)
 	ctx := context.Background()

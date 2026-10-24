@@ -2,18 +2,19 @@ package im
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type lifecycleTestAdapter struct{}
@@ -43,62 +44,47 @@ func (c *lifecycleFactoryCounters) factory() AdapterFactory {
 	}
 }
 
-// lifecycleDBSeq makes each database name unique within the process, so a name
-// can never be reused: t.Name() alone repeats under -count>1, and the wall
-// clock collides between tests started in the same tick.
-var lifecycleDBSeq atomic.Int64
-
+// newLifecycleTestDB opens an isolated PostgreSQL database for lifecycle tests.
+//
+// Isolation is per schema: every test gets its own schema, and the schema is
+// dropped when the test finishes — that is the PostgreSQL counterpart of
+// closing a shared-cache in-memory database, and it is what keeps two tests
+// from seeing each other's rows.
+//
+// IMChannel's production schema defaults id to uuid_generate_v4(), which needs
+// the uuid-ossp extension; the test instance is not guaranteed to have it, so
+// the table is still created by hand and the IDs are assigned explicitly.
 func newLifecycleTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	name := fmt.Sprintf("file:im-lifecycle-%s-%d?mode=memory&cache=shared", t.Name(), lifecycleDBSeq.Add(1))
-	db, err := gorm.Open(sqlite.Open(name), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	// A shared-cache in-memory database lives as long as one connection to it
-	// remains open, so without this the schema outlives the test that created
-	// it. Registered before the caller's own cleanups, which therefore run
-	// first and can still use the database while shutting a service down.
-	t.Cleanup(func() {
-		sqlDB, err := db.DB()
-		if err != nil {
-			t.Errorf("resolve sql.DB for cleanup: %v", err)
-			return
-		}
-		if err := sqlDB.Close(); err != nil {
-			t.Errorf("close sqlite: %v", err)
-		}
-	})
-	// IMChannel's production schema uses PostgreSQL's uuid_generate_v4()
-	// default, which SQLite cannot parse. Keep an equivalent minimal table for
-	// lifecycle tests; IDs are assigned explicitly below.
+	db := testutil.OpenTestDB(t)
 	if err := db.Exec(`CREATE TABLE im_channels (
-		id TEXT PRIMARY KEY,
-		tenant_id INTEGER NOT NULL,
-		agent_id TEXT NOT NULL,
-		platform TEXT NOT NULL,
-		name TEXT NOT NULL DEFAULT '',
-		enabled NUMERIC NOT NULL DEFAULT 1,
-		mode TEXT NOT NULL DEFAULT 'websocket',
-		output_mode TEXT NOT NULL DEFAULT 'stream',
-		locale TEXT NOT NULL DEFAULT '',
-		knowledge_base_id TEXT DEFAULT '',
-		bot_identity TEXT NOT NULL DEFAULT '',
-		session_mode TEXT NOT NULL DEFAULT 'user',
-		credentials TEXT NOT NULL DEFAULT '{}',
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
+		id VARCHAR(36) PRIMARY KEY,
+		tenant_id BIGINT NOT NULL,
+		agent_id VARCHAR(36) NOT NULL,
+		platform VARCHAR(20) NOT NULL,
+		name VARCHAR(255) NOT NULL DEFAULT '',
+		enabled BOOLEAN NOT NULL DEFAULT true,
+		mode VARCHAR(20) NOT NULL DEFAULT 'websocket',
+		output_mode VARCHAR(20) NOT NULL DEFAULT 'stream',
+		locale VARCHAR(16) NOT NULL DEFAULT '',
+		knowledge_base_id VARCHAR(36) DEFAULT '',
+		bot_identity VARCHAR(255) NOT NULL DEFAULT '',
+		session_mode VARCHAR(20) NOT NULL DEFAULT 'user',
+		credentials JSONB NOT NULL DEFAULT '{}'::JSONB,
+		created_at TIMESTAMPTZ,
+		updated_at TIMESTAMPTZ,
+		deleted_at TIMESTAMPTZ
 	)`).Error; err != nil {
 		t.Fatalf("create im_channels: %v", err)
 	}
 	return db
 }
 
-// Regression test for a shared in-memory database between two lifecycle
-// tests: run the subtests in parallel, the closest a test can get to the
-// original wall-clock collision, and confirm the second's table is empty
-// rather than seeing the first's row or a "table already exists" error.
+// Regression test for a shared database between two lifecycle tests: run the
+// subtests in parallel, the closest a test can get to the original wall-clock
+// collision, and confirm the second's table is empty rather than seeing the
+// first's row or a "table already exists" error. On PostgreSQL the isolation
+// comes from each subtest getting its own schema.
 func TestNewLifecycleTestDBIsolatesConcurrentTests(t *testing.T) {
 	t.Run("seeds a channel", func(t *testing.T) {
 		t.Parallel()
@@ -117,38 +103,61 @@ func TestNewLifecycleTestDBIsolatesConcurrentTests(t *testing.T) {
 	})
 }
 
-// Repeated -count runs reuse one process, so a database name derived only from
-// t.Name() is handed out twice. Calling the helper twice here is what a second
-// -count iteration does, and it caught the regression that closing the
-// connection and adding a per-call sequence number fixes (review on #3415).
+// Repeated -count runs reuse one process, so the same test name is handed out
+// twice. Each use of the helper must therefore start from an empty database:
+// on PostgreSQL that means the schema of the previous use was already dropped.
+// The two uses live in sibling subtests because the schema is derived from the
+// test name, and a sibling subtest has its own name.
 func TestNewLifecycleTestDBIsUsableTwiceInOneProcess(t *testing.T) {
-	first := newLifecycleTestDB(t)
-	createLifecycleChannel(t, first, "marker", "agent-1")
-
-	second := newLifecycleTestDB(t)
-	var count int64
-	if err := second.Table("im_channels").Count(&count).Error; err != nil {
-		t.Fatalf("count im_channels on the second database: %v", err)
-	}
-	if count != 0 {
-		t.Fatalf("second database has %d rows, want a fresh one rather than the first's", count)
-	}
-}
-
-// The cleanup has to release the connection, or the shared-cache database
-// outlives the test and the next call to the helper reconnects to it.
-func TestNewLifecycleTestDBClosesItsConnection(t *testing.T) {
-	var leaked *gorm.DB
-	t.Run("inner", func(t *testing.T) {
-		leaked = newLifecycleTestDB(t)
+	t.Run("first", func(t *testing.T) {
+		createLifecycleChannel(t, newLifecycleTestDB(t), "marker", "agent-1")
 	})
 
-	sqlDB, err := leaked.DB()
+	t.Run("second", func(t *testing.T) {
+		second := newLifecycleTestDB(t)
+		var count int64
+		if err := second.Table("im_channels").Count(&count).Error; err != nil {
+			t.Fatalf("count im_channels on the second database: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("second database has %d rows, want a fresh one rather than the first's", count)
+		}
+	})
+}
+
+// The cleanup has to drop the schema, or the database outlives the test and
+// the next call to the helper reconnects to it.
+func TestNewLifecycleTestDBDropsItsSchema(t *testing.T) {
+	var schema string
+	t.Run("inner", func(t *testing.T) {
+		newLifecycleTestDB(t)
+		schema = testutil.SchemaName(t.Name())
+	})
+
+	dsn, err := testutil.TestDSN()
+	if err != nil {
+		t.Fatalf("resolve test DSN: %v", err)
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	sqlDB, err := db.DB()
 	if err != nil {
 		t.Fatalf("resolve sql.DB: %v", err)
 	}
-	if err := sqlDB.Ping(); err == nil {
-		t.Fatal("connection still open after the subtest finished, want it closed by t.Cleanup")
+	defer func() { _ = sqlDB.Close() }()
+	var exists bool
+	if err := db.Raw(
+		"SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = ?)",
+		schema,
+	).Scan(&exists).Error; err != nil {
+		t.Fatalf("query schema existence: %v", err)
+	}
+	if exists {
+		t.Fatalf("schema %s still exists after the subtest finished, want it dropped by t.Cleanup", schema)
 	}
 }
 
@@ -204,7 +213,9 @@ func TestEnsureChannelAdapterRefreshesStaleConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure channel adapter: %v", err)
 	}
-	if fresh.AgentID != "agent-new" || string(fresh.Credentials) != `{"token":"v2"}` {
+	// PostgreSQL 的 jsonb 读回来会规范化空白（`{"token": "v2"}`），
+	// 所以只能按 JSON 的值比较，不能比字符串。
+	if fresh.AgentID != "agent-new" || !equalChannelCredentials(fresh.Credentials, types.JSON(`{"token":"v2"}`)) {
 		t.Fatalf("stale runtime config returned: agent=%q credentials=%s", fresh.AgentID, fresh.Credentials)
 	}
 	if counters.starts.Load() != 2 || counters.stops.Load() != 1 {
@@ -312,7 +323,8 @@ func TestChannelConfigEventReloadsOtherReplica(t *testing.T) {
 	reloaded := false
 	for time.Now().Before(deadline) {
 		_, runtimeChannel, ok := svcTwo.GetChannelAdapter(channel.ID)
-		if ok && runtimeChannel.AgentID == "agent-new" && string(runtimeChannel.Credentials) == `{"token":"v2"}` {
+		if ok && runtimeChannel.AgentID == "agent-new" &&
+			equalChannelCredentials(runtimeChannel.Credentials, types.JSON(`{"token":"v2"}`)) {
 			if countersTwo.starts.Load() < 2 || countersTwo.stops.Load() < 1 {
 				t.Fatalf("replica config changed without rebuilding runtime: starts=%d stops=%d", countersTwo.starts.Load(), countersTwo.stops.Load())
 			}

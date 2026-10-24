@@ -31,7 +31,7 @@ func NewUserRepository(db *gorm.DB) interfaces.UserRepository {
 
 // CreateUser creates a user
 func (r *userRepository) CreateUser(ctx context.Context, user *types.User) error {
-	// users.tenant_id is nullable in both PostgreSQL and SQLite. GORM would
+	// users.tenant_id is nullable in PostgreSQL. GORM would
 	// otherwise serialise the uint64 zero value as 0, which violates the
 	// PostgreSQL FK and loses the distinction between "not provisioned yet"
 	// and a real tenant. Omitting the column stores SQL NULL; reads hydrate it

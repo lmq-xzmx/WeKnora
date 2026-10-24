@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -18,13 +18,10 @@ import (
 // than assumed.
 func newOwnerScopeDB(t *testing.T, name string) (*gorm.DB, map[string]string) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&types.Session{}, &types.Message{}, &types.MessageArtifactRecord{}); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	// name 参数原本用于区分 SQLite 内存库；PG 下每个测试的 schema 由
+	// t.Name() 派生，已经天然隔离，保留参数只是为了不改动调用点。
+	_ = name
+	db := testutil.OpenTestDB(t, &types.Session{}, &types.Message{}, &types.MessageArtifactRecord{})
 	sessions := map[string]*types.Session{
 		"alice":  {TenantID: 7, UserID: "web_user:alice", Title: "Alice 的会话"},
 		"bob":    {TenantID: 7, UserID: "web_user:bob", Title: "Bob 的会话"},

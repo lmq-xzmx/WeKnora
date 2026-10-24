@@ -3137,7 +3137,6 @@ definitions:
     - milvus
     - weaviate
     - doris
-    - sqlite
     - tencent_vectordb
     - opensearch
     type: string
@@ -3150,7 +3149,6 @@ definitions:
     - MilvusRetrieverEngineType
     - WeaviateRetrieverEngineType
     - DorisRetrieverEngineType
-    - SQLiteRetrieverEngineType
     - TencentVectorDBRetrieverEngineType
     - OpenSearchRetrieverEngineType
   github_com_Tencent_WeKnora_internal_types.RetrieverEngines:
@@ -4250,7 +4248,7 @@ definitions:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.UserPreferences'
         description: |-
           Per-user UI/feature preferences.
-          Stored as JSON (jsonb on Postgres, TEXT on SQLite) via the
+          Stored as JSON (jsonb on Postgres) via the
           driver.Valuer / sql.Scanner methods on UserPreferences.
       tenant:
         allOf:

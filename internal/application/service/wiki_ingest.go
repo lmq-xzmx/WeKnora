@@ -560,7 +560,7 @@ func WikiPendingLanguage(ctx context.Context, db *gorm.DB, tenantID uint64, kbID
 	if db == nil || kbID == "" {
 		return ""
 	}
-	// Plucked as text: SQLite returns the column as a string, which does not
+	// Plucked as text: the column comes back as a string, which does not
 	// scan into json.RawMessage.
 	var payloads []string
 	if err := db.WithContext(ctx).Model(&types.TaskPendingOp{}).

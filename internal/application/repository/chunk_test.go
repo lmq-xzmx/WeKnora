@@ -5,20 +5,25 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// setupChunkTestDB creates an in-memory SQLite database with chunk and tag tables.
+// setupChunkTestDB creates a PostgreSQL test database with chunk and tag tables.
 func setupChunkTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Chunk{}, &types.KnowledgeTag{}))
+	db := testutil.OpenTestDB(t, &types.Chunk{}, &types.KnowledgeTag{})
+
+	// 生产迁移（000001）里 chunks.metadata 是 JSONB，而 types 的 gorm tag 写的是
+	// json，AutoMigrate 建出来的是 json 列。仓库里的查询按 PG 语义写死了
+	// jsonb_array_length()/->，在 json 列上会直接报函数不存在。
+	// 测试要跑在和线上一致的列类型上，所以这里改回 JSONB。
+	require.NoError(t, db.Exec(
+		`ALTER TABLE chunks ALTER COLUMN metadata TYPE JSONB USING metadata::jsonb`).Error)
 	return db
 }
 
@@ -34,7 +39,7 @@ func makeChunk(kbID, knowledgeID string, chunkType string) *types.Chunk {
 	}
 }
 
-func TestCreateChunks_SQLite_SeqIDAutoAssigned(t *testing.T) {
+func TestCreateChunks_SeqIDAutoAssigned(t *testing.T) {
 	db := setupChunkTestDB(t)
 	repo := NewChunkRepository(db)
 	ctx := context.Background()
@@ -83,7 +88,7 @@ func TestCreateChunks_CleansContextHeaderBeforePersistence(t *testing.T) {
 	assert.True(t, utf8.ValidString(saved.ContextHeader))
 }
 
-func TestCreateChunks_SQLite_SeqIDContinuesFromExisting(t *testing.T) {
+func TestCreateChunks_SeqIDContinuesFromExisting(t *testing.T) {
 	db := setupChunkTestDB(t)
 	repo := NewChunkRepository(db)
 	ctx := context.Background()
@@ -115,7 +120,7 @@ func TestCreateChunks_SQLite_SeqIDContinuesFromExisting(t *testing.T) {
 	}
 }
 
-func TestCreateChunks_SQLite_SeqIDUniqueAcrossKBs(t *testing.T) {
+func TestCreateChunks_SeqIDUniqueAcrossKBs(t *testing.T) {
 	db := setupChunkTestDB(t)
 	repo := NewChunkRepository(db)
 	ctx := context.Background()
@@ -148,7 +153,7 @@ func TestCreateChunks_SQLite_SeqIDUniqueAcrossKBs(t *testing.T) {
 	}
 }
 
-func TestKnowledgeTag_SQLite_SeqIDAutoAssigned(t *testing.T) {
+func TestKnowledgeTag_SeqIDAutoAssigned(t *testing.T) {
 	db := setupChunkTestDB(t)
 	ctx := context.Background()
 
@@ -177,7 +182,7 @@ func TestKnowledgeTag_SQLite_SeqIDAutoAssigned(t *testing.T) {
 	assert.NotEqual(t, tag1.SeqID, tag2.SeqID)
 }
 
-func TestCreateChunks_SQLite_SeqIDAfterSoftDelete(t *testing.T) {
+func TestCreateChunks_SeqIDAfterSoftDelete(t *testing.T) {
 	db := setupChunkTestDB(t)
 	repo := NewChunkRepository(db)
 	ctx := context.Background()
@@ -217,7 +222,7 @@ func TestCreateChunks_SQLite_SeqIDAfterSoftDelete(t *testing.T) {
 	assert.Equal(t, int64(5), saved[1].SeqID)
 }
 
-func TestUpdateChunk_SQLite_NoNOWError(t *testing.T) {
+func TestUpdateChunk_NoNOWError(t *testing.T) {
 	db := setupChunkTestDB(t)
 	ctx := context.Background()
 

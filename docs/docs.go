@@ -21826,7 +21826,6 @@ const docTemplate = `{
                 "milvus",
                 "weaviate",
                 "doris",
-                "sqlite",
                 "tencent_vectordb",
                 "opensearch"
             ],
@@ -21839,7 +21838,6 @@ const docTemplate = `{
                 "MilvusRetrieverEngineType",
                 "WeaviateRetrieverEngineType",
                 "DorisRetrieverEngineType",
-                "SQLiteRetrieverEngineType",
                 "TencentVectorDBRetrieverEngineType",
                 "OpenSearchRetrieverEngineType"
             ]
@@ -23244,7 +23242,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "preferences": {
-                    "description": "Per-user UI/feature preferences.\nStored as JSON (jsonb on Postgres, TEXT on SQLite) via the\ndriver.Valuer / sql.Scanner methods on UserPreferences.",
+                    "description": "Per-user UI/feature preferences.\nStored as JSON (jsonb on Postgres) via the\ndriver.Valuer / sql.Scanner methods on UserPreferences.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UserPreferences"

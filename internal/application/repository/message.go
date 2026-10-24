@@ -365,10 +365,10 @@ func (r *messageRepository) SearchMessagesByKeyword(
 		limit = 20
 	}
 
-	// ILIKE is Postgres-only; SQLite (Lite build) and MySQL lack the keyword,
-	// so mirror the session-list search with LOWER() on both sides. ESCAPE ?
-	// pairs with escapeLikeKeyword: SQLite has no default LIKE escape
-	// character, so without it \% and \_ would never match a literal wildcard.
+	// ILIKE is Postgres-only; MySQL lacks the keyword, so mirror the
+	// session-list search with LOWER() on both sides. ESCAPE ? pairs with
+	// escapeLikeKeyword: without it \% and \_ would never match a literal
+	// wildcard on dialects that do not default to a LIKE escape character.
 	contentLikeExpr := "LOWER(messages.content) LIKE LOWER(?) ESCAPE ?"
 	if r.db.Name() == "postgres" {
 		contentLikeExpr = "messages.content ILIKE ? ESCAPE ?"

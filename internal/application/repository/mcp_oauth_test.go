@@ -5,18 +5,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func newMCPOAuthTestRepo(t *testing.T) *mcpOAuthRepository {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.MCPOAuthClient{}, &types.MCPOAuthToken{}))
+	db := testutil.OpenTestDB(t, &types.MCPOAuthClient{}, &types.MCPOAuthToken{})
 
 	return NewMCPOAuthRepository(db).(*mcpOAuthRepository)
 }

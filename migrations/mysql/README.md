@@ -4,12 +4,11 @@
 
 ## 现状
 
-`internal/container/container.go` 的 `initDatabase()` 中，`DB_DRIVER` 的 switch 只有两个分支：
+`internal/container/container.go` 的 `initDatabase()` 中，`DB_DRIVER` 的 switch 只有一个分支：
 
 | `DB_DRIVER` | 迁移来源 |
 | --- | --- |
 | `postgres` | `migrations/versioned/`（golang-migrate 增量迁移） |
-| `sqlite` | `migrations/sqlite/`（golang-migrate 增量迁移，Lite 模式） |
 
 其余取值一律返回 `unsupported database driver`，因此配置 `DB_DRIVER=mysql` 会导致服务启动失败。
 

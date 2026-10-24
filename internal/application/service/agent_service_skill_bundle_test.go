@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -56,13 +56,10 @@ func (skillBundleResolver) ResolveBackend(
 
 func newAgentSkillBundleService(t *testing.T, files map[string][]byte) (*agentService, *gorm.DB) {
 	t.Helper()
-	dsn := "file:agent-skill-" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
+	db := testutil.OpenTestDB(t,
 		&types.TenantSkillEntity{}, &types.TenantSkillCatalogEntity{},
 		&types.TenantSkillSnapshotEntity{}, &types.TenantUserEnvVar{},
-	))
+	)
 	return &agentService{
 		db:              db,
 		storageResolver: skillBundleResolver{fs: skillBundleFileMap{files: files}},

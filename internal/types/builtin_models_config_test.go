@@ -8,20 +8,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+
+	"github.com/Tencent/WeKnora/internal/testutil"
 )
 
-// setupBuiltinModelsDB creates an in-memory SQLite DB with `models` migrated
-// via GORM AutoMigrate. AutoMigrate honours the struct tags so the
+// setupBuiltinModelsDB opens a PostgreSQL test DB with `models` migrated via
+// GORM AutoMigrate. AutoMigrate honours the struct tags so the
 // `managed_by` and soft-delete columns are present, matching what the real
 // migrations produce.
 func setupBuiltinModelsDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Model{}))
-	return db
+	return testutil.OpenTestDB(t, &Model{})
 }
 
 // writeYAML writes a builtin_models.yaml file inside a fresh temp dir and

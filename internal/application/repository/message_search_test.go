@@ -4,25 +4,21 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// SearchMessagesByKeyword runs on every supported main-database dialect —
-// the Lite build serves POST /messages/search from SQLite. The query used to
-// be Postgres-only ILIKE, which is a syntax error everywhere else.
+// SearchMessagesByKeyword 跑在主数据库上（现在是 PostgreSQL）。查询过去写死成
+// Postgres 专属的 ILIKE，在别的方言上是语法错误。
 
 func newMessageSearchDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Session{}, &types.Message{}, &types.MessageArtifactRecord{}))
-	return db
+	return testutil.OpenTestDB(t, &types.Session{}, &types.Message{}, &types.MessageArtifactRecord{})
 }
 
-func TestSearchMessagesByKeywordMatchesOnSQLite(t *testing.T) {
+func TestSearchMessagesByKeywordMatchesCaseInsensitively(t *testing.T) {
 	db := newMessageSearchDB(t)
 	repo := NewMessageRepository(db)
 
@@ -60,7 +56,7 @@ func TestSearchMessagesByKeywordTreatsWildcardsLiterally(t *testing.T) {
 
 	// A keyword containing % must match the literal character, not act as a
 	// LIKE wildcard. escapeLikeKeyword emits \%, which only works when the
-	// query declares ESCAPE '\' — SQLite has no default escape character.
+	// query declares ESCAPE '\' — PostgreSQL 没有默认的 LIKE 转义字符。
 	results, err := repo.SearchMessagesByKeyword(
 		context.Background(), 7, "web_user:alice", "100%", nil, 10)
 	require.NoError(t, err)

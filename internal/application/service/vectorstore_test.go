@@ -9,11 +9,11 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	sqlitedrv "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -244,20 +244,25 @@ func TestCreateStore_ConnectionConfigValidation(t *testing.T) {
 			wantError: true,
 		},
 		{
-			// Postgres is no longer registerable as a DB-managed store (see
-			// validEngineTypes); the Validate() call inside CreateStore short-
-			// circuits before validateConnectionConfig ever runs. Either
-			// missing-config or full-config rejects with "unsupported engine
-			// type". The env-store path (RETRIEVE_DRIVER=postgres) reaches the
-			// engine registry through BuildEnvVectorStores and does not
-			// traverse this code path.
-			name: "postgres rejected as DB store (any config)",
+			// Postgres is the primary engine (pgvector), so Validate() lets it
+			// through and validateConnectionConfig is what rejects a store with
+			// neither an explicit addr nor the default connection.
+			name: "postgres without addr or default connection",
+			store: &types.VectorStore{
+				TenantID: 1, Name: "test",
+				EngineType:       types.PostgresRetrieverEngineType,
+				ConnectionConfig: types.ConnectionConfig{},
+			},
+			wantError: true,
+		},
+		{
+			name: "postgres with default connection",
 			store: &types.VectorStore{
 				TenantID: 1, Name: "test",
 				EngineType:       types.PostgresRetrieverEngineType,
 				ConnectionConfig: types.ConnectionConfig{UseDefaultConnection: true},
 			},
-			wantError: true,
+			wantError: false,
 		},
 		{
 			name: "qdrant without host",
@@ -282,17 +287,6 @@ func TestCreateStore_ConnectionConfigValidation(t *testing.T) {
 			store: &types.VectorStore{
 				TenantID: 1, Name: "test",
 				EngineType:       types.WeaviateRetrieverEngineType,
-				ConnectionConfig: types.ConnectionConfig{},
-			},
-			wantError: true,
-		},
-		{
-			// SQLite, like Postgres, is no longer registerable as a DB store
-			// (see validEngineTypes). Reachable only as an env store.
-			name: "sqlite rejected as DB store",
-			store: &types.VectorStore{
-				TenantID: 1, Name: "test",
-				EngineType:       types.SQLiteRetrieverEngineType,
 				ConnectionConfig: types.ConnectionConfig{},
 			},
 			wantError: true,
@@ -522,7 +516,7 @@ func TestCreateStore_NilRegistryAndFactory(t *testing.T) {
 // both a kbRepo and a *gorm.DB handle, so the in-memory mock cannot
 // exercise it. The TestDeleteStore_Guard_* family below covers the same
 // outcomes (success, missing store, registry interaction, rollback)
-// against an actual sqlite transaction.
+// against an actual database transaction.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -575,7 +569,7 @@ func TestUpdateStore_ValidationError(t *testing.T) {
 
 // TestDeleteStore_Success and TestDeleteStore_RepoError have been replaced
 // by the TestDeleteStore_Guard_* family below, which exercises the
-// transactional delete-guard path against an actual sqlite database (a mock
+// transactional delete-guard path against an actual database (a mock
 // repo would not honor the row-lock + binding-count semantics).
 
 // ---------------------------------------------------------------------------
@@ -636,15 +630,6 @@ func TestTestConnection_UnsupportedEngineType(t *testing.T) {
 	var appErr *errors.AppError
 	require.ErrorAs(t, err, &appErr)
 	assert.Equal(t, errors.ErrBadRequest, appErr.Code)
-}
-
-func TestTestConnection_SQLiteAlwaysSucceeds(t *testing.T) {
-	repo := &mockVectorStoreRepo{}
-	svc := NewVectorStoreService(repo, nil, nil, nil, nil)
-
-	version, err := svc.TestConnection(context.Background(), types.SQLiteRetrieverEngineType, types.ConnectionConfig{})
-	assert.NoError(t, err)
-	assert.Empty(t, version)
 }
 
 func TestTestConnection_PostgresDefaultConnection(t *testing.T) {
@@ -760,12 +745,6 @@ func TestValidateConnectionConfig(t *testing.T) {
 			wantError:  true,
 		},
 		{
-			name:       "sqlite always valid",
-			engineType: types.SQLiteRetrieverEngineType,
-			config:     types.ConnectionConfig{},
-			wantError:  false,
-		},
-		{
 			name:       "doris valid",
 			engineType: types.DorisRetrieverEngineType,
 			config:     types.ConnectionConfig{Addr: "doris-fe:9030", Database: "weknora"},
@@ -800,66 +779,17 @@ func TestValidateConnectionConfig(t *testing.T) {
 // ---------------------------------------------------------------------------
 // DeleteStore guard + ResolveStoreView + BatchResolveStoreView integration
 //
-// These use a real sqlite in-memory database because the delete guard relies
-// on GORM transactions and the soft-delete auto-scope; an interface-level
-// mock would not catch divergence between the row-lock path and the count.
+// These use a real PostgreSQL database because the delete guard relies
+// on GORM transactions, the soft-delete auto-scope and the PostgreSQL-only
+// SELECT … FOR UPDATE row lock; an interface-level mock would not catch
+// divergence between the row-lock path and the count.
 // ---------------------------------------------------------------------------
-
-// guardTestDDL inlines the subset of migrations/sqlite/000000_init.up.sql
-// that the delete-guard tests touch. We do not use AutoMigrate because the
-// KnowledgeBase struct carries `type:jsonb` GORM tags that SQLite cannot
-// map cleanly.
-const guardTestDDL = `
-CREATE TABLE IF NOT EXISTS vector_stores (
-    id VARCHAR(36) NOT NULL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    engine_type VARCHAR(50) NOT NULL,
-    connection_config TEXT NOT NULL DEFAULT '{}',
-    index_config TEXT NOT NULL DEFAULT '{}',
-    tenant_id INTEGER NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    deleted_at DATETIME NULL
-);
-CREATE TABLE IF NOT EXISTS knowledge_bases (
-    profile_config TEXT,
-    generated_profile TEXT,
-    id VARCHAR(36) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    tenant_id INTEGER NOT NULL,
-    creator_id VARCHAR(36),
-    type VARCHAR(32) NOT NULL DEFAULT 'document',
-    chunking_config TEXT NOT NULL DEFAULT '{}',
-    image_processing_config TEXT NOT NULL DEFAULT '{}',
-    embedding_model_id VARCHAR(64) NOT NULL,
-    summary_model_id VARCHAR(64) NOT NULL,
-    cos_config TEXT NOT NULL DEFAULT '{}',
-    storage_provider_config TEXT DEFAULT NULL,
-    vlm_config TEXT NOT NULL DEFAULT '{}',
-    extract_config TEXT NULL DEFAULT NULL,
-    faq_config TEXT,
-    question_generation_config TEXT NULL,
-    auto_tag_config TEXT NULL,
-    is_temporary BOOLEAN NOT NULL DEFAULT 0,
-    is_pinned INTEGER NOT NULL DEFAULT 0,
-    pinned_at DATETIME NULL,
-    asr_config TEXT,
-		vector_store_id VARCHAR(36),
-		storage_backend_id VARCHAR(36),
-    wiki_config TEXT,
-    indexing_strategy TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    deleted_at DATETIME
-);
-`
 
 func newGuardTestService(t *testing.T) (*vectorStoreService, *gorm.DB, *mockStoreRegistry) {
 	t.Helper()
-	db, err := gorm.Open(sqlitedrv.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.Exec(guardTestDDL).Error)
+	// 用 AutoMigrate 建表而不是手写 DDL：PostgreSQL 上 JSON/JSONB 列类型
+	// 可以直接映射结构体，之前的内联 DDL 只能给 SQLite 用。
+	db := testutil.OpenTestDB(t, &types.VectorStore{}, &types.KnowledgeBase{})
 
 	registry := newMockStoreRegistry()
 	svc := &vectorStoreService{
@@ -873,8 +803,8 @@ func newGuardTestService(t *testing.T) (*vectorStoreService, *gorm.DB, *mockStor
 	return svc, db, registry
 }
 
-// realStoreRepo is a hand-rolled VectorStoreRepository against an in-memory
-// sqlite handle. We avoid pulling in the repository package to keep this
+// realStoreRepo is a hand-rolled VectorStoreRepository against the test
+// database handle. We avoid pulling in the repository package to keep this
 // test file self-contained.
 type realStoreRepo struct{ db *gorm.DB }
 

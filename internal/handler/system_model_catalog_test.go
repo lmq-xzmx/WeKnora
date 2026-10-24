@@ -14,8 +14,8 @@ import (
 	modelruntime "github.com/Tencent/WeKnora/internal/models/runtime"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+
+	"github.com/Tencent/WeKnora/internal/testutil"
 )
 
 func TestSystemModelCatalogPreviewAndPublish(t *testing.T) {
@@ -23,12 +23,10 @@ func TestSystemModelCatalogPreviewAndPublish(t *testing.T) {
 	snapshot := modelruntime.SnapshotCurrent()
 	t.Cleanup(func() { modelruntime.RestoreSnapshot(snapshot) })
 	t.Setenv("MODELS_CONFIG", filepath.Join(t.TempDir(), "absent.json"))
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "catalog.db")), &gorm.Config{})
-	require.NoError(t, err)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = sqlDB.Close() })
-	ddl, err := os.ReadFile("../../migrations/sqlite/000031_model_catalog_config.up.sql")
+	db := testutil.OpenTestDB(t)
+	// 目录里的表结构由版本化迁移负责，这里直接执行线上那份迁移，
+	// 保证用例跑的是 PostgreSQL 上真实生效的 DDL。
+	ddl, err := os.ReadFile("../../migrations/versioned/000111_model_catalog_config.up.sql")
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(string(ddl)).Error)
 	h := &SystemHandler{modelCatalogSvc: service.NewModelCatalogService(repository.NewModelCatalogRepository(db), nil)}

@@ -27,7 +27,6 @@ import (
 	openSearchRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/opensearch"
 	postgresRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/postgres"
 	qdrantRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/qdrant"
-	sqliteRetrieverRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/sqlite"
 	tencentVectorDBRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/tencentvectordb"
 	weaviateRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/weaviate"
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
@@ -76,8 +75,6 @@ func createEngineServiceFromStore(
 		return createWeaviateEngine(store)
 	case types.DorisRetrieverEngineType:
 		return createDorisEngine(store)
-	case types.SQLiteRetrieverEngineType:
-		return createSQLiteEngine(store, db)
 	case types.TencentVectorDBRetrieverEngineType:
 		return createTencentVectorDBEngine(store)
 	case types.OpenSearchRetrieverEngineType:
@@ -105,7 +102,7 @@ func validateRuntimeVectorStoreAddresses(store types.VectorStore) error {
 	}
 
 	switch store.EngineType {
-	case types.PostgresRetrieverEngineType, types.SQLiteRetrieverEngineType:
+	case types.PostgresRetrieverEngineType:
 		return nil
 	case types.ElasticsearchRetrieverEngineType,
 		types.OpenSearchRetrieverEngineType,
@@ -164,11 +161,6 @@ func createPostgresEngine(store types.VectorStore, db *gorm.DB) (interfaces.Retr
 	// Phase 1: only UseDefaultConnection is supported.
 	// Custom connections require connection pool management and migration handling.
 	return nil, fmt.Errorf("custom postgres connections not yet supported; use use_default_connection=true")
-}
-
-func createSQLiteEngine(_ types.VectorStore, db *gorm.DB) (interfaces.RetrieveEngineService, error) {
-	repo := sqliteRetrieverRepo.NewSQLiteRetrieveEngineRepository(db)
-	return retriever.NewKVHybridRetrieveEngine(repo, types.SQLiteRetrieverEngineType), nil
 }
 
 func createElasticsearchEngine(store types.VectorStore, cfg *config.Config) (interfaces.RetrieveEngineService, error) {

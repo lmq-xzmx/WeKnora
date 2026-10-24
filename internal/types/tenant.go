@@ -42,10 +42,6 @@ var retrieverEngineMapping = map[string][]RetrieverEngineParams{
 		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: DorisRetrieverEngineType},
 		{RetrieverType: VectorRetrieverType, RetrieverEngineType: DorisRetrieverEngineType},
 	},
-	"sqlite": {
-		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: SQLiteRetrieverEngineType},
-		{RetrieverType: VectorRetrieverType, RetrieverEngineType: SQLiteRetrieverEngineType},
-	},
 	"tencent_vectordb": {
 		{RetrieverType: KeywordsRetrieverType, RetrieverEngineType: TencentVectorDBRetrieverEngineType},
 		{RetrieverType: VectorRetrieverType, RetrieverEngineType: TencentVectorDBRetrieverEngineType},

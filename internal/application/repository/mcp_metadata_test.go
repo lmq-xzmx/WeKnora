@@ -6,16 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestMCPMetadataPersistsCompleteScopedSnapshotsAndRejectsOlderWrites(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.MCPMetadata{}))
+	db := testutil.OpenTestDB(t, &types.MCPMetadata{})
 	repo := &mcpServiceRepository{db: db}
 	ctx := context.Background()
 	newer := &types.MCPMetadata{
@@ -43,7 +40,7 @@ func TestMCPMetadataPersistsCompleteScopedSnapshotsAndRejectsOlderWrites(t *test
 	require.NoError(t, repo.SaveMetadata(ctx, &older))
 	got, err := repo.GetMetadata(ctx, 1, "svc", "user:a")
 	require.NoError(t, err)
-	require.Equal(t, newer.Tools, got.Tools)
+	requireToolsEqual(t, newer.Tools, got.Tools)
 	require.Equal(t, newer.Instructions, got.Instructions)
 	for _, key := range []struct {
 		tenant             uint64
@@ -63,9 +60,7 @@ func TestMCPMetadataPersistsCompleteScopedSnapshotsAndRejectsOlderWrites(t *test
 }
 
 func TestListMetadataSummariesCountsToolsWithoutReturningPayloads(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.MCPMetadata{}))
+	db := testutil.OpenTestDB(t, &types.MCPMetadata{})
 	repo := &mcpServiceRepository{db: db}
 	ctx := context.Background()
 	require.NoError(t, repo.SaveMetadata(ctx, &types.MCPMetadata{
@@ -98,4 +93,20 @@ func TestListMetadataSummariesCountsToolsWithoutReturningPayloads(t *testing.T) 
 	other, err := repo.ListMetadataSummaries(ctx, 1, []string{"user:b"})
 	require.NoError(t, err)
 	require.Empty(t, other)
+}
+
+// requireToolsEqual 按 JSON 语义比较工具目录。
+//
+// tools 落在 jsonb 列里，而 PostgreSQL 的 jsonb 会在写入时规范化文本：
+// 键被重排、逗号和冒号后补上空格。所以同一份 JSON 在 PG 上读回来的字节
+// 序列和写进去的不一样，字节级断言必然失败，只能按语义比较。
+func requireToolsEqual(t *testing.T, want, got []*types.MCPTool) {
+	t.Helper()
+	require.Len(t, got, len(want))
+	for i := range want {
+		require.Equal(t, want[i].Name, got[i].Name)
+		require.Equal(t, want[i].Description, got[i].Description)
+		require.Equal(t, want[i].RequireApproval, got[i].RequireApproval)
+		require.JSONEq(t, string(want[i].InputSchema), string(got[i].InputSchema))
+	}
 }

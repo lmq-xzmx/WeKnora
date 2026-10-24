@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/sandbox"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -71,10 +71,7 @@ func (m *destroyRecordingManager) BoundSandboxID(context.Context, string) (strin
 
 func borrowedSessionDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	_ = db.Migrator().DropTable(&types.Session{})
-	require.NoError(t, db.AutoMigrate(&types.Session{}))
+	db := testutil.OpenTestDB(t, &types.Session{})
 	require.NoError(t, db.Model(&types.Session{}).Create(map[string]any{
 		"id": "s-1", "tenant_id": borrowerTenant,
 	}).Error)

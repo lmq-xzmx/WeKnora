@@ -7,12 +7,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/localsandbox/adapter"
 	"github.com/Tencent/WeKnora/internal/sandbox"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -92,9 +92,7 @@ func newSessionServiceForHostDeleteTest(
 	resolver sandbox.TenantSandboxResolver,
 ) (*sessionService, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Session{}))
+	db := testutil.OpenTestDB(t, &types.Session{})
 	return &sessionService{
 		sessionRepo:        repository.NewSessionRepository(db),
 		messageRepo:        deleteForkMessageRepo{},

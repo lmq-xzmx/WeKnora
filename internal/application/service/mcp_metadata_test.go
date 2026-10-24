@@ -9,22 +9,19 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/mcp"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/utils"
 	sdkmcp "github.com/mark3labs/mcp-go/mcp"
 	sdkserver "github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestMCPMetadataRefreshAndOfflineEditing(t *testing.T) {
 	utils.SetSSRFWhitelistFromRaw("127.0.0.1")
 	t.Cleanup(utils.ResetSSRFWhitelistForTest)
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.MCPService{}, &types.MCPMetadata{}))
+	db := testutil.OpenTestDB(t, &types.MCPService{}, &types.MCPMetadata{})
 	repo := repository.NewMCPServiceRepository(db)
 	manager := mcp.NewMCPManager(nil)
 	t.Cleanup(manager.Shutdown)

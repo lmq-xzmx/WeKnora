@@ -43,7 +43,7 @@ type VectorStore struct {
 	TenantID uint64 `yaml:"tenant_id" json:"tenant_id"`
 	// User-friendly name, e.g., "elasticsearch-hot"
 	Name string `yaml:"name" json:"name" gorm:"type:varchar(255);not null"`
-	// Engine type: postgres, elasticsearch, qdrant, milvus, weaviate, sqlite
+	// Engine type: postgres, elasticsearch, qdrant, milvus, weaviate
 	EngineType RetrieverEngineType `yaml:"engine_type" json:"engine_type" gorm:"type:varchar(50);not null"`
 	// Driver-specific connection parameters (sensitive fields encrypted with AES-GCM)
 	ConnectionConfig ConnectionConfig `yaml:"connection_config" json:"connection_config" gorm:"type:json"`
@@ -75,15 +75,11 @@ func (v *VectorStore) BeforeCreate(tx *gorm.DB) error {
 //
 // Excluded engines:
 //   - Infinity / ElasticFaiss — legacy/experimental, no standalone deployable instance.
-//   - Postgres / SQLite — only meaningful when bound to the app's default DB
-//     connection (UseDefaultConnection=true). The Postgres retriever's
-//     embeddings table is a single hard-coded name with no per-store
-//     partitioning, so registering a second Postgres store on the same
-//     instance has no separation effect — every KB sharing this engine
-//     ends up in the same physical table. These engines are still
-//     reachable via env stores (RETRIEVE_DRIVER=postgres/sqlite), which
-//     route through a separate code path (BuildEnvVectorStores) and do
-//     not pass through this validation.
+//
+// Postgres is registered here because the retriever now supports a
+// per-store collection prefix, so multiple Postgres stores on the same
+// instance are physically separated. It can still bind to the app's
+// default DB connection (UseDefaultConnection=true).
 var validEngineTypes = map[RetrieverEngineType]bool{
 	ElasticsearchRetrieverEngineType:   true,
 	QdrantRetrieverEngineType:          true,
@@ -682,8 +678,7 @@ func GetVectorStoreTypes() []VectorStoreTypeInfo {
 				{Name: "number_of_replicas", Type: "number", Required: false, Description: "Replicas", Default: 1},
 			},
 		},
-		// SQLite is excluded from the type list because it only supports
-		// the app's default DB connection. PostgreSQL (with pgvector) can be added as a DB store.
+		// PostgreSQL (with pgvector) can be added as a DB store.
 		{
 			Type:        "postgres",
 			DisplayName: "PostgreSQL",
@@ -855,12 +850,6 @@ func buildEnvStoreForDriver(driver string, envLookup EnvLookupFunc) *VectorStore
 			ConnectionConfig: ConnectionConfig{
 				UseDefaultConnection: true,
 			},
-		}
-	case "sqlite":
-		return &VectorStore{
-			ID:         "__env_sqlite__",
-			Name:       "SQLite",
-			EngineType: SQLiteRetrieverEngineType,
 		}
 	case "elasticsearch_v8":
 		return &VectorStore{

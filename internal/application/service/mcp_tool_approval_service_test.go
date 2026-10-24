@@ -7,16 +7,14 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/agent/approval"
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func TestMCPDirectoryBatchPolicyUsesOneDatabaseQuery(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.MCPToolApproval{}))
+	db := testutil.OpenTestDB(t, &types.MCPToolApproval{})
 	mcpRepo := newFakeMCPRepo()
 	ctx := context.Background()
 	require.NoError(t, mcpRepo.Create(ctx, &types.MCPService{ID: "svc", TenantID: 7, Enabled: true}))
@@ -48,9 +46,7 @@ func TestMCPDirectoryBatchPolicyUsesOneDatabaseQuery(t *testing.T) {
 
 func newMCPToolApprovalServiceForTest(t *testing.T) (*mcpToolApprovalService, *fakeMCPRepo) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.MCPToolApproval{}))
+	db := testutil.OpenTestDB(t, &types.MCPToolApproval{})
 
 	mcpRepo := newFakeMCPRepo()
 	require.NoError(t, mcpRepo.Create(context.Background(), &types.MCPService{

@@ -7,121 +7,45 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// wikiPagesTestDDL is a minimal SQLite-compatible subset of the
-// production wiki_pages DDL (migrations/versioned/000037_wiki_and_indexing.up.sql).
-// JSONB is stored as TEXT in SQLite; the StringArray Scan/Value pair
-// handles the JSON round-trip unchanged.
-const wikiPagesTestDDL = `
-CREATE TABLE IF NOT EXISTS wiki_pages (
-    id                VARCHAR(36) PRIMARY KEY,
-    tenant_id         INTEGER NOT NULL,
-    knowledge_base_id VARCHAR(36) NOT NULL,
-    slug              VARCHAR(255) NOT NULL,
-    title             VARCHAR(512) NOT NULL DEFAULT '',
-    page_type         VARCHAR(32) NOT NULL DEFAULT 'summary',
-    status            VARCHAR(32) NOT NULL DEFAULT 'published',
-    content           TEXT NOT NULL DEFAULT '',
-    summary           TEXT NOT NULL DEFAULT '',
-    parent_slug       VARCHAR(255) NOT NULL DEFAULT '',
-    folder_id         VARCHAR(36) NOT NULL DEFAULT '',
-    category_path     TEXT DEFAULT '[]',
-    wiki_path         VARCHAR(1024) NOT NULL DEFAULT '',
-    depth             INTEGER NOT NULL DEFAULT 0,
-    sort_order        INTEGER NOT NULL DEFAULT 0,
-    source_refs       TEXT DEFAULT '[]',
-    chunk_refs        TEXT DEFAULT '[]',
-    in_links          TEXT DEFAULT '[]',
-    out_links         TEXT DEFAULT '[]',
-    page_metadata     TEXT DEFAULT '{}',
-    aliases           TEXT DEFAULT '[]',
-    version           INTEGER NOT NULL DEFAULT 1,
-    last_edit_source  VARCHAR(16) NOT NULL DEFAULT '',
-    last_editor_id    VARCHAR(64) NOT NULL DEFAULT '',
-    created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-    deleted_at        DATETIME
-);
-`
-
-// wikiPageRevisionsTestDDL mirrors the production wiki_page_revisions DDL
-// (migrations/versioned/000075_wiki_page_revisions.up.sql) for SQLite.
-const wikiPageRevisionsTestDDL = `
-CREATE TABLE IF NOT EXISTS wiki_page_revisions (
-    id                VARCHAR(36) PRIMARY KEY,
-    tenant_id         INTEGER NOT NULL,
-    knowledge_base_id VARCHAR(36) NOT NULL,
-    page_id           VARCHAR(36) NOT NULL,
-    slug              VARCHAR(255) NOT NULL,
-    version           INTEGER NOT NULL,
-    title             VARCHAR(512) NOT NULL DEFAULT '',
-    page_type         VARCHAR(32) NOT NULL DEFAULT 'summary',
-    status            VARCHAR(32) NOT NULL DEFAULT 'published',
-    content           TEXT NOT NULL DEFAULT '',
-    summary           TEXT NOT NULL DEFAULT '',
-    aliases           TEXT DEFAULT '[]',
-    edit_source       VARCHAR(16) NOT NULL DEFAULT '',
-    editor_id         VARCHAR(64) NOT NULL DEFAULT '',
-    edited_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wiki_page_revisions_page_version
-    ON wiki_page_revisions (page_id, version);
-`
-
-// wikiPageIssuesTestDDL mirrors the production wiki_page_issues DDL for SQLite.
-const wikiPageIssuesTestDDL = `
-CREATE TABLE IF NOT EXISTS wiki_page_issues (
-    id                      VARCHAR(36) PRIMARY KEY,
-    tenant_id               INTEGER NOT NULL,
-    knowledge_base_id      VARCHAR(36) NOT NULL,
-    slug                    VARCHAR(255) NOT NULL,
-    issue_type              VARCHAR(50) NOT NULL,
-    description             TEXT NOT NULL,
-    suspected_knowledge_ids TEXT,
-    status                  VARCHAR(20) NOT NULL DEFAULT 'pending',
-    reported_by             VARCHAR(100) NOT NULL,
-    created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
-    deleted_at              DATETIME
-);
-`
-
-// wikiFoldersTestDDL mirrors the production wiki_folders DDL for SQLite.
-const wikiFoldersTestDDL = `
-CREATE TABLE IF NOT EXISTS wiki_folders (
-    id                VARCHAR(36) PRIMARY KEY,
-    tenant_id         INTEGER NOT NULL DEFAULT 0,
-    knowledge_base_id VARCHAR(36) NOT NULL,
-    parent_id         VARCHAR(36) NOT NULL DEFAULT '',
-    name              VARCHAR(255) NOT NULL,
-    path              VARCHAR(1024) NOT NULL DEFAULT '',
-    depth             INTEGER NOT NULL DEFAULT 0,
-    sort_order        INTEGER NOT NULL DEFAULT 0,
-    created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-    deleted_at        DATETIME
-);
-`
-
 func setupWikiPagesTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.Exec(wikiPagesTestDDL).Error)
-	require.NoError(t, db.Exec(wikiFoldersTestDDL).Error)
-	require.NoError(t, db.Exec(wikiPageIssuesTestDDL).Error)
-	for _, stmt := range strings.Split(strings.TrimSpace(wikiPageRevisionsTestDDL), ";") {
-		if strings.TrimSpace(stmt) == "" {
-			continue
-		}
+	// 以前这里内联了一份 SQLite 方言的 DDL（JSON 存 TEXT、时间戳存 DATETIME），
+	// 因为 SQLite 上 AutoMigrate 映射不出这些列。PostgreSQL 上 AutoMigrate
+	// 能直接按 types 的 gorm tag 建表，所以改用 AutoMigrate。
+	db := testutil.OpenTestDB(t,
+		&types.WikiPage{}, &types.WikiFolder{},
+		&types.WikiPageIssue{}, &types.WikiPageRevision{})
+
+	// 生产表由 migrations/versioned/000037、000075 建出来，JSON 列是 JSONB；
+	// 而 types 里的 gorm tag 写的是 json，AutoMigrate 建出来的是 json 列。
+	// 仓库里的查询按 PG 语义写死了 jsonb_array_length()/::jsonb，
+	// 在 json 列上会直接报 "function jsonb_array_length(json) does not exist"。
+	// 所以这里把列类型改回生产实际的 JSONB —— 测试要跑在和线上一致的 schema 上。
+	for _, stmt := range []string{
+		`ALTER TABLE wiki_pages ALTER COLUMN category_path TYPE JSONB USING category_path::jsonb`,
+		`ALTER TABLE wiki_pages ALTER COLUMN source_refs TYPE JSONB USING source_refs::jsonb`,
+		`ALTER TABLE wiki_pages ALTER COLUMN chunk_refs TYPE JSONB USING chunk_refs::jsonb`,
+		`ALTER TABLE wiki_pages ALTER COLUMN in_links TYPE JSONB USING in_links::jsonb`,
+		`ALTER TABLE wiki_pages ALTER COLUMN out_links TYPE JSONB USING out_links::jsonb`,
+		`ALTER TABLE wiki_pages ALTER COLUMN page_metadata TYPE JSONB USING page_metadata::jsonb`,
+		`ALTER TABLE wiki_pages ALTER COLUMN aliases TYPE JSONB USING aliases::jsonb`,
+		`ALTER TABLE wiki_page_issues ALTER COLUMN suspected_knowledge_ids TYPE JSONB USING suspected_knowledge_ids::jsonb`,
+		`ALTER TABLE wiki_page_revisions ALTER COLUMN aliases TYPE JSONB USING aliases::jsonb`,
+		// slug 的唯一性：AutoMigrate 按 types 里的 gorm tag 建出 UNIQUE(slug)，
+		// 但生产迁移 000037 建的是 UNIQUE(knowledge_base_id, slug) WHERE deleted_at IS NULL
+		// —— 同一个 slug 在不同知识库里是允许的。索引口径必须和生产一致，
+		// 否则跨知识库复用 slug 的用例会撞唯一键。
+		`DROP INDEX IF EXISTS idx_kb_slug`,
+		`CREATE UNIQUE INDEX idx_wiki_pages_kb_slug ON wiki_pages (knowledge_base_id, slug) WHERE deleted_at IS NULL`,
+	} {
 		require.NoError(t, db.Exec(stmt).Error)
 	}
 	return db
@@ -146,9 +70,16 @@ func makeWikiPage(kbID, slug, pageType, status string) *types.WikiPage {
 		Content:         "body of " + slug,
 		Summary:         "summary of " + slug,
 		WikiPath:        pageType + "/" + title,
-		Version:         1,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+		// 必须是非 nil 的空切片：nil 的 StringArray 会被 Value() 序列化成
+		// JSON null 存进 jsonb 列，而仓库的排序表达式调用
+		// jsonb_array_length(category_path) —— 对 jsonb 'null' 取数组长度
+		// 会直接报错 "cannot get array length of a scalar"。
+		// 线上写入路径总是先过 normalizeWikiHierarchy，把 category_path
+		// 规整成 [] 或真实路径，所以线上永远不会存 jsonb null。
+		CategoryPath: types.StringArray{},
+		Version:      1,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 }
 
@@ -196,11 +127,10 @@ func TestList_WikiPathSortReturnsCategorizedPagesFirst(t *testing.T) {
 	assert.Equal(t, "entity/001-root", got[2].Slug)
 }
 
-// TestList_CategoryPathFilterMatchesOnSQLite protects the directory view on the
-// SQLite build: the sidebar loads a folder's pages with category_path +
-// category_depth, and StringArray is stored as a BLOB there, so a plain
-// equality against a TEXT bind never matched and every folder listed empty.
-func TestList_CategoryPathFilterMatchesOnSQLite(t *testing.T) {
+// TestList_CategoryPathFilterMatches guards the directory view: the sidebar
+// loads a folder's pages with category_path + category_depth, and the
+// category_path comparison must match the JSONB array the column stores.
+func TestList_CategoryPathFilterMatches(t *testing.T) {
 	db := setupWikiPagesTestDB(t)
 	repo := NewWikiPageRepository(db)
 	ctx := context.Background()
@@ -472,7 +402,7 @@ func TestListByTypeLight_ClampsLimit(t *testing.T) {
 	assert.LessOrEqual(t, len(clampedEntries), 200)
 }
 
-func TestCountOrphans_SQLiteCountsEmptyInLinks(t *testing.T) {
+func TestCountOrphansCountsEmptyInLinks(t *testing.T) {
 	db := setupWikiPagesTestDB(t)
 	repo := NewWikiPageRepository(db)
 	ctx := context.Background()

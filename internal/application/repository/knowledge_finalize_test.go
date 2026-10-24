@@ -8,69 +8,39 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// knowledgesTestDDL mirrors the columns of `knowledges` that
-// SetFinalizing / FinalizeSubtask / UpdateKnowledge actually read or write.
-// We inline the DDL (instead of AutoMigrate) so the schema is explicit,
-// and we include pending_subtasks_count from migration 000056 plus the
-// processing/finalizing/completed columns the helpers care about.
-const knowledgesTestDDL = `
-CREATE TABLE IF NOT EXISTS knowledges (
-    profile TEXT,
-    id VARCHAR(36) PRIMARY KEY,
-    tenant_id INTEGER NOT NULL,
-    knowledge_base_id VARCHAR(36) NOT NULL,
-    type VARCHAR(50) NOT NULL DEFAULT '',
-    title VARCHAR(255) NOT NULL DEFAULT '',
-    description TEXT,
-    source VARCHAR(2048) NOT NULL DEFAULT '',
-    parse_status VARCHAR(50) NOT NULL DEFAULT 'unprocessed',
-    enable_status VARCHAR(50) NOT NULL DEFAULT 'enabled',
-    embedding_model_id VARCHAR(64),
-    file_name VARCHAR(255),
-    folder_path VARCHAR(1024) NOT NULL DEFAULT '',
-    file_type VARCHAR(50),
-    file_size BIGINT,
-    file_path TEXT,
-    file_hash VARCHAR(64),
-    storage_size BIGINT NOT NULL DEFAULT 0,
-    metadata TEXT,
-    tag_id VARCHAR(36),
-    summary_status VARCHAR(32) DEFAULT 'none',
-    last_faq_import_result TEXT DEFAULT NULL,
-    channel VARCHAR(50) NOT NULL DEFAULT 'web',
-    pending_subtasks_count INT NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    processed_at DATETIME,
-    error_message TEXT,
-    deleted_at DATETIME
-);
-`
-
-// setupKnowledgeTestDB returns an in-memory SQLite db with the knowledges
-// table. SQLite has a single-writer constraint, so we cap MaxOpenConns at 1
-// and set a busy timeout: concurrent goroutines line up on the same
-// connection (just like production write workloads serialize at the row
-// level). This is enough to exercise the atomic semantics of the helpers
-// without flaking on "database table is locked".
+// setupKnowledgeTestDB returns a PostgreSQL test db with the knowledges table.
+//
+// 以前这里内联了一份 SQLite 方言的 DDL，并把连接池压到 1 条连接来绕开
+// SQLite 的单写者限制。PostgreSQL 没有这个限制：并发写走的是行级锁，
+// FinalizeSubtask 的原子递减在 PG 上照样成立，所以连接池保持默认即可。
 func setupKnowledgeTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := "file:" + uuid.New().String() + "?mode=memory&cache=shared&_busy_timeout=5000"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	require.NoError(t, err)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.Exec(knowledgesTestDDL).Error)
-	t.Cleanup(func() { _ = sqlDB.Close() })
+	db := testutil.OpenTestDB(t, &types.Knowledge{})
+
+	// 生产迁移里 knowledges 的 JSON 列都是 JSONB（000000/000078/000101），
+	// 而 types 的 gorm tag 写的是 json，AutoMigrate 建出来的是 json 列。
+	// 测试要跑在和线上一致的列类型上，所以这里改回 JSONB。
+	//
+	// custom_metadata 更是必须补上 DEFAULT：生产是 NOT NULL DEFAULT '{}'，
+	// types 的 tag 只写了 not null，AutoMigrate 建出来的列没有默认值，
+	// 裸 SQL 插入不带这一列就会直接报错。
+	for _, stmt := range []string{
+		`ALTER TABLE knowledges ALTER COLUMN metadata TYPE JSONB USING metadata::jsonb`,
+		`ALTER TABLE knowledges ALTER COLUMN custom_metadata TYPE JSONB USING custom_metadata::jsonb`,
+		`ALTER TABLE knowledges ALTER COLUMN custom_metadata SET DEFAULT '{}'::JSONB`,
+		`ALTER TABLE knowledges ALTER COLUMN last_faq_import_result TYPE JSONB USING last_faq_import_result::jsonb`,
+		`ALTER TABLE knowledges ALTER COLUMN profile TYPE JSONB USING profile::jsonb`,
+	} {
+		require.NoError(t, db.Exec(stmt).Error)
+	}
 	return db
 }
 

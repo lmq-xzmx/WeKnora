@@ -281,12 +281,19 @@ func TestSoftDeleteSessionArtifactsIsAtomic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Dropping the table mid-transaction is the cheapest way to make the
-	// second statement fail after the first one succeeded.
+	// 让第二条语句失败的便宜办法是给它挂一个会抛异常的触发器。
+	// PostgreSQL 没有 SQLite 的 RAISE(ABORT)，改用 plpgsql 的 RAISE EXCEPTION。
+	require.NoError(t, db.Exec(`CREATE OR REPLACE FUNCTION fail_second_artifact() RETURNS trigger AS $$
+	BEGIN
+		IF NEW.position = 1 THEN
+			RAISE EXCEPTION 'boom';
+		END IF;
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql`).Error)
 	require.NoError(t, db.Exec(
 		`CREATE TRIGGER fail_second BEFORE UPDATE ON message_artifacts
-		 WHEN NEW.position = 1
-		 BEGIN SELECT RAISE(ABORT, 'boom'); END`).Error)
+		 FOR EACH ROW EXECUTE FUNCTION fail_second_artifact()`).Error)
 
 	_, err = repo.SoftDeleteSessionArtifacts(ctx, "s1", []types.ArtifactRef{
 		{MessageID: msg.ID, Position: 0},
@@ -294,7 +301,7 @@ func TestSoftDeleteSessionArtifactsIsAtomic(t *testing.T) {
 	}, created)
 	require.Error(t, err)
 
-	require.NoError(t, db.Exec("DROP TRIGGER fail_second").Error)
+	require.NoError(t, db.Exec("DROP TRIGGER fail_second ON message_artifacts").Error)
 	got, err := repo.GetMessage(ctx, "s1", msg.ID)
 	require.NoError(t, err)
 	require.False(t, got.Artifacts[0].Deleted(), "the first mark must roll back with the failed second one")

@@ -5,19 +5,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func setupDataSourceRepoTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.DataSource{}, &types.SyncLog{}))
-	return db
+	return testutil.OpenTestDB(t, &types.DataSource{}, &types.SyncLog{})
 }
 
 func TestDataSourceRepositoryUpdateSyncStateClearsErrorMessage(t *testing.T) {
@@ -47,7 +44,9 @@ func TestDataSourceRepositoryUpdateSyncStateClearsErrorMessage(t *testing.T) {
 	require.NoError(t, db.First(&stored, "id = ?", ds.ID).Error)
 	assert.Equal(t, types.DataSourceStatusActive, stored.Status)
 	assert.Empty(t, stored.ErrorMessage)
-	assert.Equal(t, result.ToString(), stored.LastSyncResult.ToString())
+	// last_sync_result 是 jsonb 列，PostgreSQL 会在写入时规范化 JSON 文本
+	// （补空格、重排键），所以按 JSON 语义比较而不是比字节。
+	assert.JSONEq(t, result.ToString(), stored.LastSyncResult.ToString())
 	require.NotNil(t, stored.LastSyncAt)
 }
 
@@ -130,7 +129,7 @@ func TestDataSourceRepositoryCreatePersistsEnabledSyncDeletions(t *testing.T) {
 	assert.True(t, stored.SyncDeletions)
 }
 
-func TestDataSourceRepositoryDeleteSoftDeletesOnSQLite(t *testing.T) {
+func TestDataSourceRepositoryDeleteSoftDeletes(t *testing.T) {
 	db := setupDataSourceRepoTestDB(t)
 	repo := NewDataSourceRepository(db)
 	ctx := context.Background()
@@ -198,6 +197,7 @@ func TestSyncLogRepositoryUpdateResultClearsErrorMessage(t *testing.T) {
 	assert.Empty(t, stored.ErrorMessage)
 	assert.Zero(t, stored.ItemsTotal)
 	assert.Zero(t, stored.ItemsFailed)
-	assert.Equal(t, result.ToString(), stored.Result.ToString())
+	// 同上：result 落在 jsonb 列上，只能按 JSON 语义比较。
+	assert.JSONEq(t, result.ToString(), stored.Result.ToString())
 	require.NotNil(t, stored.FinishedAt)
 }

@@ -5,19 +5,19 @@ import (
 	"testing"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func newSessionRepositoryForTest(t *testing.T) (interfaces.SessionRepository, *gorm.DB) {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Session{}))
+	// im_channel_sessions 在部分用例里要参与 LEFT JOIN，所以这里一并建表，
+	// 免得每个用例自己再 AutoMigrate 一次。
+	db := testutil.OpenTestDB(t, &types.Session{}, &testIMChannelSession{})
 
 	return NewSessionRepository(db), db
 }
@@ -192,7 +192,6 @@ func listItemIDsForTest(items []*types.SessionListItem) []string {
 // (which would happen if the source-filter join excluded soft-deleted mappings).
 func TestSessionRepositoryQueryPagedKeepsClearedIMSessionsOutOfWeb(t *testing.T) {
 	repo, db := newSessionRepositoryForTest(t)
-	require.NoError(t, db.AutoMigrate(&testIMChannelSession{}))
 	ctx := context.Background()
 
 	web := createSessionForTest(t, db, 1, "alice")     // never bound to IM -> web
@@ -225,7 +224,6 @@ func TestSessionRepositoryQueryPagedKeepsClearedIMSessionsOutOfWeb(t *testing.T)
 
 func TestSessionRepositoryQueryPagedSplitsWebAndEmbedSessions(t *testing.T) {
 	repo, db := newSessionRepositoryForTest(t)
-	require.NoError(t, db.AutoMigrate(&testIMChannelSession{}))
 	ctx := context.Background()
 
 	web := createSessionForTest(t, db, 1, "alice")
@@ -251,7 +249,6 @@ func TestSessionRepositoryQueryPagedSplitsWebAndEmbedSessions(t *testing.T) {
 // Legacy tenant-level rows (user_id "") must still show up in web.
 func TestSessionRepositoryQueryPagedWebExcludesAPIKeySessions(t *testing.T) {
 	repo, db := newSessionRepositoryForTest(t)
-	require.NoError(t, db.AutoMigrate(&testIMChannelSession{}))
 	ctx := context.Background()
 
 	legacy := createSessionForTest(t, db, 1, "") // legacy tenant web row
@@ -268,7 +265,6 @@ func TestSessionRepositoryQueryPagedWebExcludesAPIKeySessions(t *testing.T) {
 
 func TestSessionRepositoryGetIMPlatform(t *testing.T) {
 	repo, db := newSessionRepositoryForTest(t)
-	require.NoError(t, db.AutoMigrate(&testIMChannelSession{}))
 	ctx := context.Background()
 
 	imSession := createSessionForTest(t, db, 1, "alice")
@@ -293,7 +289,6 @@ func TestSessionRepositoryGetIMPlatform(t *testing.T) {
 
 func TestSessionRepositoryQueryPagedAPISourceReturnsAllTenantAPIKeySessions(t *testing.T) {
 	repo, db := newSessionRepositoryForTest(t)
-	require.NoError(t, db.AutoMigrate(&testIMChannelSession{}))
 	ctx := context.Background()
 
 	// API requests without and with external-user identity, plus a web user and
@@ -326,7 +321,6 @@ func TestSessionRepositoryQueryPagedAPISourceReturnsAllTenantAPIKeySessions(t *t
 // the exclusion lives in applyBase and not in the "web" source branch.
 func TestSessionRepositoryQueryPagedHidesMaintenanceSessions(t *testing.T) {
 	repo, db := newSessionRepositoryForTest(t)
-	require.NoError(t, db.AutoMigrate(&testIMChannelSession{}))
 	ctx := context.Background()
 
 	web := createSessionForTest(t, db, 1, "alice")

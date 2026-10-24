@@ -17,7 +17,7 @@ import (
 // Message.Artifacts as if it were a column.
 
 // artifactLoadBatch bounds the IN list when loading artifacts for many
-// messages; SQLite caps bound parameters per statement.
+// messages; some dialects cap bound parameters per statement.
 const artifactLoadBatch = 500
 
 // writeMessageArtifacts replaces the stored artifacts of one message. A nil
@@ -398,7 +398,7 @@ func (r *messageRepository) SoftDeleteSessionArtifacts(
 		marked = marked[:0]
 		// One statement per ref: the pairs are a handful at most (a message's
 		// artifacts, or one file's versions), and a composite IN list is not
-		// portable across PostgreSQL and SQLite.
+		// portable across the supported dialects.
 		for _, ref := range refs {
 			if ref.MessageID == "" || ref.Position < 0 {
 				continue

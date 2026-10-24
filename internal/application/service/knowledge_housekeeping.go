@@ -289,11 +289,11 @@ func (h *HousekeepingService) filterByLastSpanActivity(
 	}
 
 	// We scan MAX(updated_at) as string then parse client-side. That
-	// dodges the SQLite driver's well-known refusal to auto-convert
+	// dodges the driver's well-known refusal to auto-convert
 	// aggregate datetime values into time.Time on its own — Postgres
 	// happily round-trips, but the same query shape must work in
 	// Lite mode too. Since we only compare against a cutoff, the
-	// parse layer below tries the formats both Postgres and SQLite
+	// parse layer below tries the formats the supported dialects
 	// emit and takes the first that parses.
 	type spanHeartbeat struct {
 		KnowledgeID string `gorm:"column:knowledge_id"`

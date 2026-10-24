@@ -250,9 +250,8 @@ func (r *taskPendingOpsRepository) PeekBatch(
 //     already locked by another in-flight claim is skipped entirely rather
 //     than half-claimed. We then stamp every eligible row of the chosen
 //     keys and read them back.
-//   - Other dialects (SQLite, used by unit tests / Lite mode): writes are
-//     serialized by the single-writer engine, so a plain grouped SELECT +
-//     UPDATE is already race-free.
+//   - Other dialects (e.g. MySQL): writes are serialized by the engine, so a
+//     plain grouped SELECT + UPDATE is already race-free.
 //
 // Rows are claimed by explicit id (only the eligible ones), so a freshly
 // enqueued or still-in-flight sibling row of a chosen key is never handed

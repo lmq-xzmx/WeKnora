@@ -7,11 +7,11 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -104,9 +104,7 @@ type faqWriteFixture struct {
 
 func newFAQWriteFixture(t *testing.T) *faqWriteFixture {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Knowledge{}, &types.Chunk{}, &types.KnowledgeTag{}))
+	db := testutil.OpenTestDB(t, &types.Knowledge{}, &types.Chunk{}, &types.KnowledgeTag{})
 	store := "write-store"
 	kb := &types.KnowledgeBase{ID: "kb", TenantID: 7, Type: types.KnowledgeBaseTypeFAQ, VectorStoreID: &store}
 	lookup := &writeKBLookup{kb: kb}

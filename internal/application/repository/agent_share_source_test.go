@@ -2,35 +2,45 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestGetShareByAgentIDAndSourceForTenantDisambiguatesSource(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:agent-share-source?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	statements := []string{
-		`CREATE TABLE agent_shares (
-			id TEXT PRIMARY KEY, agent_id TEXT, organization_id TEXT,
-			shared_by_user_id TEXT, source_tenant_id INTEGER, permission TEXT,
-			created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-		)`,
-		`CREATE TABLE organization_tenant_members (organization_id TEXT, tenant_id INTEGER)`,
-		`CREATE TABLE organizations (id TEXT PRIMARY KEY, deleted_at DATETIME)`,
-		`CREATE TABLE custom_agents (id TEXT, tenant_id INTEGER, deleted_at DATETIME)`,
-		`INSERT INTO organizations(id) VALUES ('org')`,
-		`INSERT INTO organization_tenant_members(organization_id, tenant_id)
-			VALUES ('org', 7), ('org', 42), ('org', 84)`,
-		`INSERT INTO custom_agents(id, tenant_id) VALUES ('builtin-smart-reasoning', 42), ('builtin-smart-reasoning', 84)`,
-		`INSERT INTO agent_shares(id, agent_id, organization_id, source_tenant_id) VALUES
-			('share-42', 'builtin-smart-reasoning', 'org', 42),
-			('share-84', 'builtin-smart-reasoning', 'org', 84)`,
+	// 用 AutoMigrate 建表而不是内联 DDL：内联 DDL 用的是 SQLite 方言
+	//（TEXT/INTEGER/DATETIME），在 PostgreSQL 上不成立。
+	db := testutil.OpenTestDB(t,
+		&types.Tenant{}, &types.User{},
+		&types.Organization{}, &types.OrganizationTenantMember{},
+		&types.CustomAgent{}, &types.AgentShare{})
+	require.NoError(t, db.Create(&types.Tenant{ID: 1, Name: "t1"}).Error)
+	require.NoError(t, db.Create(&types.User{
+		ID: "owner", Username: "owner", Email: "owner@example.com", TenantID: 1,
+	}).Error)
+	require.NoError(t, db.Create(&types.Organization{
+		ID: "org", Name: "org", OwnerID: "owner", OwnerTenantID: 1, InviteCode: "code-org",
+	}).Error)
+	for _, tenantID := range []uint64{7, 42, 84} {
+		require.NoError(t, db.Create(&types.OrganizationTenantMember{
+			ID: fmt.Sprintf("m-%d", tenantID), OrganizationID: "org", TenantID: tenantID,
+			Role: types.OrgRoleViewer, RepresentativeUserID: "owner",
+		}).Error)
 	}
-	for _, statement := range statements {
-		require.NoError(t, db.Exec(statement).Error)
+	for _, tenantID := range []uint64{42, 84} {
+		require.NoError(t, db.Create(&types.CustomAgent{
+			ID: "builtin-smart-reasoning", TenantID: tenantID, Name: "builtin-smart-reasoning",
+		}).Error)
+	}
+	for _, tenantID := range []uint64{42, 84} {
+		require.NoError(t, db.Create(&types.AgentShare{
+			ID: fmt.Sprintf("share-%d", tenantID), AgentID: "builtin-smart-reasoning",
+			OrganizationID: "org", SharedByUserID: "owner", SourceTenantID: tenantID,
+			Permission: types.OrgRoleViewer,
+		}).Error)
 	}
 
 	repo := &agentShareRepository{db: db}

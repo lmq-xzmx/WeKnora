@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -86,9 +86,7 @@ func (f *fakeKBShareService) CountByOrganizations(context.Context, []string) (ma
 func setupKnowledgeSharedAccessDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Knowledge{}))
+	db := testutil.OpenTestDB(t, &types.Knowledge{})
 	return db
 }
 

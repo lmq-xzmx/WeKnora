@@ -5,19 +5,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func newArtifactTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
+	db := testutil.OpenTestDB(t,
 		&types.Session{}, &types.Message{}, &types.MessageArtifactRecord{}, &testIMChannelSession{},
-	))
+	)
+
+	// AutoMigrate 会按 Session.Messages 关联给 messages.session_id 建一个指向
+	// sessions(id) 的外键，但生产迁移 000000 建的 messages 表并没有这个外键，
+	// 而 SQLite 从来不校验外键，所以以前这些用例直接写不存在的 session_id 也没事。
+	// PG 会真的校验，这里把多出来的外键去掉，让测试 schema 和线上一致。
+	require.NoError(t, db.Exec(
+		`ALTER TABLE messages DROP CONSTRAINT IF EXISTS fk_sessions_messages`).Error)
 	return db
 }
 

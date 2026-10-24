@@ -6,10 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -84,12 +82,9 @@ func TestInitRetrieveEngineRegistry_OpenSearchEnvPath(t *testing.T) {
 	ts := httptest.NewServer(osClusterHandler("opensearch", "3.3.2", true))
 	defer ts.Close()
 
-	// In-memory DB: the vector_stores table is absent, so loadDBStores logs
-	// and returns (non-fatal) — only the env-path block matters here.
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open in-mem db: %v", err)
-	}
+	// 故意不迁移 vector_stores 表：loadDBStores 查不到表时只记一条 warn 就返回，
+	// 不会中断启动 —— 这个用例只关心 env-path 分支。
+	db := testutil.OpenTestDB(t)
 
 	t.Setenv("RETRIEVE_DRIVER", "opensearch")
 	t.Setenv("OPENSEARCH_ADDR", ts.URL)

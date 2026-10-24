@@ -6,7 +6,6 @@
 
 | 情况 | 考虑 |
 | --- | --- |
-| 单机或桌面部署，使用内嵌数据库 | SQLite（内嵌，零依赖） |
 | 需要独立扩容向量检索服务 | Qdrant、Milvus |
 | 公司已有 Elasticsearch / OpenSearch 栈 | 复用现有集群 |
 | 要按知识库分开存放数据 | 保持默认引擎，另在「设置 → 向量存储」注册实例并绑定到指定知识库 |
@@ -18,7 +17,6 @@
 | 引擎 | RETRIEVE_DRIVER 值 | 向量检索 | 关键词/全文 | 关键词打分 | 中文分词 | 维度管理 | 阈值下推 | 部署复杂度 | 适用场景 |
 |------|-------------------|----------|------------|-----------|---------|----------|---------|-----------|----------|
 | PostgreSQL | `postgres` | pgvector halfvec + HNSW 表达式索引 | ParadeDB BM25（`\|\|\|`） | BM25（paradedb.score） | ParadeDB tokenizer | 单表混维，表达式索引按维 cast | 距离阈值 SQL 内 | 低（默认镜像内置） | 默认选择；与业务同库，事务一致 |
-| SQLite | `sqlite` | sqlite-vec vec0（cosine） | FTS5 contentless | FTS5 | 应用侧 bigram | 每维一张 vec0 虚表 | 应用侧 | 极低（内嵌） | 桌面版 / 开发 / 微型部署 |
 | Elasticsearch v8 | `elasticsearch_v8` | script_score cosineSimilarity | match（BM25） | BM25 | ES analyzer | dense_vector 单索引 | 应用侧 | 中 | 已有 ES 8 集群 |
 | Elasticsearch v7 | `elasticsearch_v7` | 不支持（Support 仅 keywords） | match（BM25） | BM25 | ES analyzer | — | — | 中 | 存量 ES 7，仅作关键词引擎，需与其他向量引擎组合 |
 | OpenSearch | `opensearch` | k-NN 插件 knn（HNSW） | match（BM25） | BM25 | OS analyzer | knn_vector 声明式 mapping + 指纹校验 | k-NN 原生 | 中 | 需审计/别名/reindex 的生产 ES 系方案；版本 2.11+/3.x |
@@ -36,7 +34,7 @@
 
 | 环境变量 | 默认 | 说明 |
 |----------|------|------|
-| `RETRIEVE_DRIVER` | `postgres` | 逗号分隔多驱动：`postgres` / `sqlite` / `elasticsearch_v7` / `elasticsearch_v8` / `opensearch` / `qdrant` / `milvus` / `weaviate` / `doris` / `tencent_vectordb`。多驱动时写操作广播到全部，检索按类型路由 |
+| `RETRIEVE_DRIVER` | `postgres` | 逗号分隔多驱动：`postgres` / `elasticsearch_v7` / `elasticsearch_v8` / `opensearch` / `qdrant` / `milvus` / `weaviate` / `doris` / `tencent_vectordb`。多驱动时写操作广播到全部，检索按类型路由 |
 | `MULTI_STORE_RETRIEVE_TIMEOUT_SEC` | 30 | 多 store 并行检索每组超时 |
 | `ELASTICSEARCH_ADDR` / `_USERNAME` / `_PASSWORD` / `_INDEX` | — / `WeKnora` | ES v7/v8 共用 |
 | `OPENSEARCH_ADDR` / `_USERNAME` / `_PASSWORD` / `_INDEX` / `_INSECURE_SKIP_VERIFY` | — | OpenSearch |
@@ -90,7 +88,7 @@ flowchart TD
     ENV["环境变量 RETRIEVE_DRIVER=postgres,qdrant,..."] --> REG
     DB["DB 表 vector_stores (实例级绑定)"] --> LOAD["loadDBStoresIntoRegistry"]
     LOAD --> REG["RetrieveEngineRegistry"]
-    REG --> BET["byEngineType: postgres / elasticsearch / opensearch / qdrant / milvus / weaviate / doris / sqlite / tencent_vectordb"]
+    REG --> BET["byEngineType: postgres / elasticsearch / opensearch / qdrant / milvus / weaviate / doris / tencent_vectordb"]
     REG --> BSI["byStoreID: store-uuid 到引擎实例"]
 
     Q["HybridSearch(kbIDs, params)"] --> GRP["resolveStoreGroups 按 (VectorStoreID, 属主租户) 分组"]
@@ -112,7 +110,7 @@ flowchart TD
 
 ### 引擎逐个详解 {#_2-引擎逐个详解}
 
-引擎类型常量见 `internal/types/retriever.go`：`postgres`、`elasticsearch`、`opensearch`、`qdrant`、`milvus`、`weaviate`、`doris`、`sqlite`、`tencent_vectordb`（另有 `infinity`、`elasticfaiss` 为遗留枚举，无可部署实现）。除特别注明外，所有引擎的 `Support()` 均返回 `[keywords, vector]` 两类。
+引擎类型常量见 `internal/types/retriever.go`：`postgres`、`elasticsearch`、`opensearch`、`qdrant`、`milvus`、`weaviate`、`doris`、`tencent_vectordb`（另有 `infinity`、`elasticfaiss` 为遗留枚举，无可部署实现）。除特别注明外，所有引擎的 `Support()` 均返回 `[keywords, vector]` 两类。
 
 #### PostgreSQL（pgvector + ParadeDB）— 默认引擎 {#_2-1-postgresql-pgvector-paradedb-—-默认引擎}
 
@@ -122,17 +120,6 @@ flowchart TD
 - **关键词检索**：ParadeDB `pg_search` BM25——`content ||| query`（任意 token 匹配）+ `paradedb.score(id) as score`。
 - **过滤**：`knowledge_base_id` / `knowledge_id` / `tag_id` IN 过滤（AND 语义），`is_enabled` 为 NULL 或 true。
 - **建索引**：`BatchSave` + `ON CONFLICT DO NOTHING`；删除按 chunk/source/knowledge ID 物理删除。
-
-#### SQLite（FTS5 + sqlite-vec）— 轻量单机 {#_2-2-sqlite-fts5-sqlite-vec-—-轻量单机}
-
-`internal/application/repository/retriever/sqlite/repository.go`。零外部依赖的全内嵌方案。
-
-- **向量检索**：`sqlite-vec` 扩展（cgo bindings），**每个维度一张 vec0 虚表**：`CREATE VIRTUAL TABLE ... USING vec0(embedding float[dim] distance_metric=cosine)`；查询 `WHERE v.embedding MATCH ?`（序列化查询向量）`ORDER BY v.distance`，`score = 1 - distance`。启动时 `ensureExistingVecTables` 按已有数据维度补建虚表。
-- **关键词检索**：FTS5 contentless 表 `lite_embeddings_fts`，写入时手动 **bigram 分词**（对中文友好），查询经 `sanitizeFTS5Query` 同样 bigram 化后 `MATCH`。
-- **过滤**：知识库、文档、标签和启停条件作用于 `lite_embeddings` 主表。向量路径使用 `v.rowid IN (SELECT ... FROM lite_embeddings filtered WHERE ...)`，在 top-k 选择前完成过滤。若先取全局 top-k 再过滤，范围内的有效匹配可能无法召回；
-- **错误传播**：任一检索路径失败即返回错误，避免上层将失败误判为检索成功但无匹配；
-- **阈值**：向量阈值为 0 时视为不过滤，而不是把所有结果都滤掉。
-- 适合桌面版 / 开发环境 / 极小规模部署。
 
 #### Elasticsearch v8 {#_2-3-elasticsearch-v8}
 
@@ -220,7 +207,6 @@ WeKnora 允许不同 KB 使用不同 embedding 模型（维度各异），各引
 | 引擎 | 策略 |
 |------|------|
 | PostgreSQL | 单表 `embeddings` 混存，行内 `dimension` 列；HNSW 建在 `embedding::halfvec(dim)` 表达式上，检索时 `WHERE dimension = ?` + 同维 cast 命中对应索引 |
-| SQLite | 每维度一张 `vec0` 虚表（启动时按存量数据维度自动补建） |
 | Qdrant / Milvus / TencentVectorDB | 每维度一个 collection：`{base}_{dim}`，首写时 `ensureCollection` 惰性创建（sync.Map 记忆已建维度） |
 | Doris | 每维度一张表：`{prefix}_{dim}`，`schema.go` 生成 DDL 并轮询 ANN 索引就绪 |
 | Elasticsearch | 单索引 `dense_vector` mapping（`ELASTICSEARCH_INDEX`），维度在 mapping 中固定 |
@@ -238,7 +224,7 @@ WeKnora 允许不同 KB 使用不同 embedding 模型（维度各异），各引
 
 | 引擎 | 引擎原生分数 | 驱动换算 |
 |------|---------|--------|
-| Postgres / SQLite | cosine 距离 | `1 - distance` |
+| Postgres | cosine 距离 | `1 - distance` |
 | Qdrant / TencentVectorDB / Doris | cosine（或归一化向量的内积） | 直通 |
 | Milvus（IP / COSINE） | 内积 / cosine | 直通 |
 | Milvus（L2） | 平方欧氏距离，单位向量下 = `2 - 2cos` | 分数 `1 - d/2`，阈值换成半径 `2(1 - threshold)` |
@@ -311,7 +297,7 @@ sequenceDiagram
 |------|----------|
 | 引擎注册（env + DB store） | `internal/container/container.go`（`initRetrieveEngineRegistry`）、`engine_factory.go` |
 | 注册表 / 组合引擎 / 工厂 | `internal/application/service/retriever/`（`registry.go`、`composite.go`、`factory.go`、`normalizer.go`） |
-| 各引擎实现 | `internal/application/repository/retriever/{postgres,sqlite,elasticsearch,opensearch,qdrant,milvus,weaviate,doris,tencentvectordb,neo4j}` |
+| 各引擎实现 | `internal/application/repository/retriever/{postgres,elasticsearch,opensearch,qdrant,milvus,weaviate,doris,tencentvectordb,neo4j}` |
 | 混合检索调度与融合 | `internal/application/service/knowledgebase_search*.go` |
 | 引擎类型常量 | `internal/types/retriever.go` |
 | 租户默认引擎 | `internal/types/tenant.go`（`GetDefaultRetrieverEngines`） |

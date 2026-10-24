@@ -97,12 +97,6 @@ func TestValidateConnectionAddrSSRF(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name:       "sqlite skipped (no remote address)",
-			engineType: types.SQLiteRetrieverEngineType,
-			config:     types.ConnectionConfig{},
-			wantError:  false,
-		},
-		{
 			name:       "unknown engine fails closed",
 			engineType: types.RetrieverEngineType("some-future-engine"),
 			config:     types.ConnectionConfig{Addr: "http://vector.allowed.test"},

@@ -5,26 +5,19 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func newMCPToolApprovalTestRepo(t *testing.T) interfaces.MCPToolApprovalRepository {
 	t.Helper()
-	dsn := "file:" + uuid.NewString() + "?mode=memory&cache=shared&_busy_timeout=5000"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	require.NoError(t, err)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-	// Match the production SQLite pool: concurrent callers share one connection.
-	// A busy timeout cannot resolve shared-cache SQLITE_LOCKED table conflicts.
-	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(&types.MCPToolApproval{}))
+	// 以前这里用的是 SQLite 共享缓存内存库，并把连接池压到 1 条连接来绕开
+	// SQLITE_LOCKED。PostgreSQL 没有共享缓存表锁：并发 upsert 走的是
+	// ON CONFLICT DO UPDATE 的行级锁，后到的那个会等前一个提交后再取最新行，
+	// 因此并发补丁不会互相覆盖，也不需要把连接池压成 1。
+	db := testutil.OpenTestDB(t, &types.MCPToolApproval{})
 	return NewMCPToolApprovalRepository(db)
 }
 

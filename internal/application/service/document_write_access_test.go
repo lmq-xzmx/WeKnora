@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -179,21 +178,12 @@ type documentWriteFixture struct {
 
 func newDocumentWriteFixture(t *testing.T) *documentWriteFixture {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "document.db")), &gorm.Config{})
-	require.NoError(t, err)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	sqlDB.SetMaxOpenConns(1)
-	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-	require.NoError(
-		t,
-		db.AutoMigrate(
-			&types.Knowledge{},
-			&types.Chunk{},
-			&types.KnowledgeTag{},
-			&types.KnowledgeTagRelation{},
-			&types.ChunkRevision{},
-		),
+	db := testutil.OpenTestDB(t,
+		&types.Knowledge{},
+		&types.Chunk{},
+		&types.KnowledgeTag{},
+		&types.KnowledgeTagRelation{},
+		&types.ChunkRevision{},
 	)
 	repo := &documentKnowledgeSpy{KnowledgeRepository: repository.NewKnowledgeRepository(db)}
 	chunkRepo := &documentChunkSpy{ChunkRepository: repository.NewChunkRepository(db)}

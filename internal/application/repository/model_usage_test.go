@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/testutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -12,28 +13,14 @@ import (
 	"gorm.io/gorm"
 )
 
-const customAgentsTestDDL = `
-CREATE TABLE IF NOT EXISTS custom_agents (
-    id VARCHAR(36) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    avatar VARCHAR(64),
-    is_builtin BOOLEAN NOT NULL DEFAULT 0,
-    tenant_id INTEGER NOT NULL,
-    created_by VARCHAR(36),
-    config TEXT NOT NULL DEFAULT '{}',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    deleted_at DATETIME,
-    PRIMARY KEY (id, tenant_id)
-);
-`
-
+// setupModelUsageTestDB opens a PostgreSQL test database with the
+// knowledge-base and custom-agent tables.
+//
+// 以前这里内联了一份 SQLite 方言的 custom_agents DDL。PostgreSQL 上
+// AutoMigrate 能直接按 types 的 gorm tag 建表，所以改用 AutoMigrate。
 func setupModelUsageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db := setupKBTestDB(t)
-	require.NoError(t, db.Exec(customAgentsTestDDL).Error)
-	return db
+	return testutil.OpenTestDB(t, &types.KnowledgeBase{}, &types.CustomAgent{})
 }
 
 func TestCountByModelID_KnowledgeBase(t *testing.T) {

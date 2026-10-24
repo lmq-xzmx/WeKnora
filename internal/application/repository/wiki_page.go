@@ -33,17 +33,7 @@ func NewWikiPageRepository(db *gorm.DB) interfaces.WikiPageRepository {
 	return &wikiPageRepository{db: db}
 }
 
-func (r *wikiPageRepository) wikiDialect() string {
-	if r.db == nil || r.db.Dialector == nil {
-		return ""
-	}
-	return r.db.Name()
-}
-
 func (r *wikiPageRepository) wikiCategoryRankOrder() string {
-	if r.db != nil && r.db.Dialector != nil && r.db.Dialector.Name() == "sqlite" {
-		return "CASE WHEN COALESCE(json_array_length(category_path), 0) > 0 THEN 0 ELSE 1 END ASC"
-	}
 	return "CASE WHEN COALESCE(jsonb_array_length(category_path), 0) > 0 THEN 0 ELSE 1 END ASC"
 }
 
@@ -84,9 +74,6 @@ func (r *wikiPageRepository) applyWikiPageListOrder(query *gorm.DB, sortBy, sort
 }
 
 func (r *wikiPageRepository) wikiEmptyInLinksPredicate() string {
-	if r.db != nil && r.db.Dialector != nil && r.db.Dialector.Name() == "sqlite" {
-		return "(in_links IS NULL OR json_array_length(in_links) = 0)"
-	}
 	return "(in_links IS NULL OR in_links = '[]'::JSONB)"
 }
 
@@ -378,8 +365,7 @@ func (r *wikiPageRepository) List(ctx context.Context, req *types.WikiPageListRe
 	// whose stored text is json.Marshal of the folder path segments, so we
 	// compare against the same encoding (literal segments, since the filter is a
 	// folder path and folder names are authoritative). Postgres needs an explicit
-	// jsonb cast for array equality; SQLite stores JSON as TEXT and compares
-	// directly.
+	// jsonb cast for array equality.
 	if req.FolderID != nil {
 		query = query.Where("folder_id = ?", *req.FolderID)
 	}
@@ -388,17 +374,7 @@ func (r *wikiPageRepository) List(ctx context.Context, req *types.WikiPageListRe
 	}
 	if wantPath := types.TrimWikiFolderSegments(req.CategoryPath); len(wantPath) > 0 {
 		if encoded, err := json.Marshal([]string(wantPath)); err == nil {
-			switch r.wikiDialect() {
-			case "postgres":
-				query = query.Where("category_path::jsonb = ?::jsonb", string(encoded))
-			case "sqlite":
-				// StringArray.Value yields []byte, which SQLite stores as a BLOB;
-				// a BLOB never compares equal to a TEXT bind, so compare the
-				// text form instead.
-				query = query.Where("CAST(category_path AS TEXT) = ?", string(encoded))
-			default:
-				query = query.Where("category_path = ?", string(encoded))
-			}
+			query = query.Where("category_path::jsonb = ?::jsonb", string(encoded))
 		}
 	}
 
@@ -1087,13 +1063,7 @@ func (r *wikiPageRepository) FindSimilarPages(
 	return out, nil
 }
 
-func wikiNormalizedTitleSQL(db *gorm.DB) string {
-	if db != nil && db.Dialector != nil && db.Dialector.Name() == "sqlite" {
-		// SQLite has no POSIX [[:space:]]. Strip the common separators that
-		// model formatting drift actually produces; callers still re-check
-		// with the Go identity fold so extras cannot leak through.
-		return "lower(replace(replace(replace(replace(replace(replace(title, ' ', ''), char(9), ''), char(10), ''), char(13), ''), char(160), ''), char(12288), ''))"
-	}
+func wikiNormalizedTitleSQL(_ *gorm.DB) string {
 	return "regexp_replace(lower(title), '[[:space:]]+', '', 'g')"
 }
 
