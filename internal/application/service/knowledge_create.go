@@ -13,6 +13,7 @@ import (
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/infrastructure/chunker"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
+	"github.com/Tencent/WeKnora/internal/integration/geoknowledge"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -282,6 +283,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	enqueueDataTableSummaryIfNeeded(ctx, s.task, tenantID, knowledge.ID, safeFilename, getFileType(safeFilename), kb.SummaryModelID, kb.EmbeddingModelID)
 
 	logger.Infof(ctx, "Knowledge from file created successfully, ID: %s", knowledge.ID)
+	s.notifyGEOKCreated(ctx, knowledge)
 	return knowledge, nil
 }
 
@@ -468,6 +470,7 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 	logger.Infof(ctx, "Enqueued URL process task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, knowledge.ID)
 
 	logger.Infof(ctx, "Knowledge from URL created successfully, ID: %s", knowledge.ID)
+	s.notifyGEOKCreated(ctx, knowledge)
 	return knowledge, nil
 }
 
@@ -714,6 +717,7 @@ func (s *knowledgeService) createKnowledgeFromFileURL(
 	enqueueDataTableSummaryIfNeeded(ctx, s.task, tenantID, knowledge.ID, fileName, fileType, kb.SummaryModelID, kb.EmbeddingModelID)
 
 	logger.Infof(ctx, "Knowledge from file URL created successfully, ID: %s", knowledge.ID)
+	s.notifyGEOKCreated(ctx, knowledge)
 	return knowledge, nil
 }
 
@@ -857,7 +861,24 @@ func (s *knowledgeService) CreateKnowledgeFromManual(ctx context.Context,
 			})
 	}
 
+	// Notify GEO-Knowledge of the new knowledge entry
+	s.notifyGEOKCreated(ctx, knowledge)
+
 	return knowledge, nil
+}
+
+// notifyGEOKCreated sends a webhook to GEO-Knowledge when a knowledge is created.
+// Must be called after the knowledge is persisted (so it has an ID).
+func (s *knowledgeService) notifyGEOKCreated(ctx context.Context, knowledge *types.Knowledge) {
+	if s.geoKWebhook == nil {
+		return
+	}
+	go func() {
+		if err := s.geoKWebhook.Notify(context.Background(), geoknowledge.EventCreated, geoknowledge.EntityKnowledge,
+			knowledge.ID, knowledge.Title, knowledgeBodyForWebhook(knowledge), "", knowledge.Source, knowledge.KnowledgeBaseID); err != nil {
+			logger.Warnf(ctx, "GEO-Knowledge webhook created notify failed for %s: %v", knowledge.ID, err)
+		}
+	}()
 }
 
 // createKnowledgeFromPassageInternal consolidates the common logic for creating knowledge from passages.
@@ -990,6 +1011,7 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 		logger.Infof(ctx, "Enqueued passage process task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, knowledge.ID)
 		logger.Infof(ctx, "Knowledge from passage created successfully, ID: %s", knowledge.ID)
 	}
+	s.notifyGEOKCreated(ctx, knowledge)
 	return knowledge, nil
 }
 

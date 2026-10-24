@@ -18,6 +18,14 @@ type UserService interface {
 	// provisioning is the default tenant mode for a newly auto-created user
 	// (resolved by the caller from auth.default_tenant_mode).
 	LoginWithOIDC(ctx context.Context, code, redirectURI string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+	// LoginWithExternalToken exchanges an access token issued by the
+	// configured external IdP for a locally issued token. It is the
+	// server-to-server counterpart of LoginWithOIDC: the caller already
+	// holds a valid IdP token (obtained through its own login flow) and
+	// gets back the same identity expressed as a local token, without a
+	// browser redirect. The IdP token is validated against the IdP's
+	// userinfo endpoint, so an arbitrary bearer string cannot mint tokens.
+	LoginWithExternalToken(ctx context.Context, externalAccessToken string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
 	// GetUserByID gets a user by ID
 	GetUserByID(ctx context.Context, id string) (*types.User, error)
 	// GetUsersByIDs batch-fetches users by id, returning a map keyed by

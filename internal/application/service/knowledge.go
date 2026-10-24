@@ -17,6 +17,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/config"
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
+	"github.com/Tencent/WeKnora/internal/integration/geoknowledge"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -75,6 +76,7 @@ type knowledgeService struct {
 	memFAQRunningImport sync.Map // kbID -> *runningFAQImportInfo
 	wikiRepo            interfaces.WikiPageRepository
 	wikiService         interfaces.WikiPageService
+	geoKWebhook         *geoknowledge.Client
 
 	// spanTracker records the per-attempt span tree for the parsing
 	// pipeline. Best-effort: a nil tracker (test harness) is safely
@@ -119,6 +121,7 @@ func NewKnowledgeService(
 	taskPendingRepo interfaces.TaskPendingOpsRepository,
 	spanTracker SpanTracker,
 	audit interfaces.AuditLogService,
+	geoKWebhook *geoknowledge.Client,
 ) (interfaces.KnowledgeService, error) {
 	return &knowledgeService{
 		config:          config,
@@ -148,6 +151,7 @@ func NewKnowledgeService(
 		taskPendingRepo: taskPendingRepo,
 		spanTracker:     spanTracker,
 		audit:           audit,
+		geoKWebhook:     geoKWebhook,
 	}, nil
 }
 
@@ -825,7 +829,45 @@ func (s *knowledgeService) UpdateKnowledge(ctx context.Context, knowledge *types
 		}
 	}
 	logger.Infof(ctx, "Knowledge updated successfully, ID: %s", knowledge.ID)
+
+	// Notify GEO-Knowledge of the update
+	if s.geoKWebhook != nil {
+		go func() {
+			if err := s.geoKWebhook.Notify(context.Background(), geoknowledge.EventUpdated, geoknowledge.EntityKnowledge,
+				record.ID, record.Title, knowledgeBodyForWebhook(record), "", record.Source, record.KnowledgeBaseID); err != nil {
+				logger.Warnf(ctx, "GEO-Knowledge webhook notify failed: %v", err)
+			}
+		}()
+	}
+
 	return nil
+}
+
+// knowledgeBodyForWebhook 取一条知识真正可读的正文，用于 GEO-K 的 webhook 载荷。
+//
+// Description 不是正文：manual（手工录入）知识的正文存在 metadata.content 里，
+// Description 恒为空串；文件类型的正文在切分后的 chunk 里，同样不在 Description。
+// 只传 Description 会让 GEO-K 收到一条空正文的条目 —— 落地了，但没内容。
+func knowledgeBodyForWebhook(k *types.Knowledge) string {
+	if k == nil {
+		return ""
+	}
+	if body := manualContentFromMetadata(k.Metadata); body != "" {
+		return body
+	}
+	return k.Description
+}
+
+// manualContentFromMetadata 从 knowledge 的 metadata JSON 里取出手工录入的正文。
+func manualContentFromMetadata(raw types.JSON) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var meta types.ManualKnowledgeMetadata
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(meta.Content)
 }
 
 // GetKnowledgeBatch retrieves multiple knowledge entries by their IDs

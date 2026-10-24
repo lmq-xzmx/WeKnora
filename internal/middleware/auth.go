@@ -51,6 +51,13 @@ var noAuthAPI = map[string][]string{
 	"/api/v1/auth/oidc/url":           {"GET"},
 	"/api/v1/auth/oidc/start":         {"GET"},
 	"/api/v1/auth/oidc/callback":      {"GET"},
+	// Server-to-server SSO bridge: an upstream app that already logged the
+	// user in against the same IdP (e.g. GEO-Knowledge against Casdoor)
+	// exchanges the IdP access token for a locally issued token, skipping
+	// the browser redirect. It is public by construction — the IdP token in
+	// the body IS the credential — so it is IP-rate-limited and validates
+	// the token against the configured IdP's userinfo endpoint.
+	"/api/v1/auth/oidc/token-exchange": {"POST"},
 	// MCP OAuth provider redirect: the third-party authorization server
 	// redirects the browser here without a WeKnora bearer token. The request
 	// is authenticated by the opaque, single-use `state` parameter instead.

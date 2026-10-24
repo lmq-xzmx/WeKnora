@@ -512,21 +512,119 @@ func (s *userService) LoginWithOIDC(
 		return nil, errors.New("OIDC provider did not return email")
 	}
 
+	resp, _, err := s.issueTokensForOIDCUser(ctx, userInfo, provisioning)
+	return resp, err
+}
+
+// LoginWithExternalToken 用外部 IdP 签发的 access_token 换发本系统 token。
+//
+// 背景：上层应用（典型如 GEO-Knowledge）已经用同一个 IdP（Casdoor）完成了
+// 用户登录，手里握着该用户的 IdP access_token。但那个 token 不是本系统签发的
+// JWT，无法直接当 Authorization: Bearer 用——本系统只认自己 HMAC 签发、
+// 且登记在 auth_tokens 表里的 token。
+//
+// 这个方法把「外部 IdP 身份」翻译成「本系统身份」：拿外部 token 调 IdP 的
+// userinfo 端点回查（token 的有效性和身份由 IdP 自己判定），再按 email 找/建
+// 本系统用户，最后签发本系统 token。语义上等价于一次 OIDC 登录，只是省掉了
+// 浏览器跳转，适合服务端到服务端调用。
+//
+// 安全边界：
+//   - token 必须能被配置的 userinfo 端点接受，任意字符串无法换到 token；
+//   - userinfo 返回的 iss 必须与配置的 issuer 一致，防止拿别家 IdP 的 token 来换；
+//   - 换到的用户若被停用则拒绝签发。
+func (s *userService) LoginWithExternalToken(
+	ctx context.Context,
+	externalAccessToken string,
+	provisioning types.TenantProvisioningMode,
+) (*types.OIDCCallbackResponse, error) {
+	externalAccessToken = strings.TrimSpace(externalAccessToken)
+	if externalAccessToken == "" {
+		return nil, errors.New("access_token is required")
+	}
+
+	cfg, err := s.getOIDCConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// 首选路径：直接对 IdP 的 JWKS 验签，然后读 token 自己的 claims。
+	//
+	// 为什么不用 userinfo 端点做主路径：Casdoor 的 /api/userinfo 返回的是
+	// 一个「业务信封」（{data,data2,data3,msg,name,status,sub}），不是
+	// OIDC 规范的 userinfo 响应体，email 只在信封的 data 里（而 client
+	// 凭证拿到的 data 甚至是空的）。走 JWKS 验签则完全由 IdP 的密钥背书，
+	// claims（email/name/sub/iss/aud）直接从 token 里读。
+	//
+	// 验签失败时退回 userinfo 路径：某些 IdP 的 access_token 不是 JWT，
+	// 只能靠 userinfo 回查。
+	userInfo, err := s.resolveExternalTokenUserInfo(ctx, cfg, externalAccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve external token user info: %w", err)
+	}
+
+	if strings.TrimSpace(userInfo.Email) == "" {
+		return nil, errors.New("OIDC provider did not return email")
+	}
+
+	resp, _, err := s.issueTokensForOIDCUser(ctx, userInfo, provisioning)
+	return resp, err
+}
+
+// resolveExternalTokenUserInfo 解析外部 IdP token 对应的用户身份。
+//
+// 主路径：JWKS 验签 + 读 token claims。
+// 备路径：userinfo 端点回查（用于 access_token 不是 JWT 的 IdP）。
+func (s *userService) resolveExternalTokenUserInfo(
+	ctx context.Context, cfg *config.OIDCAuthConfig, externalAccessToken string,
+) (*types.OIDCUserInfo, error) {
+	verified, err := s.verifyOIDCExternalToken(ctx, cfg, externalAccessToken)
+	if err == nil {
+		return buildOIDCUserInfo(cfg, verified), nil
+	}
+	logger.Warnf(ctx, "OIDC external token JWKS verification failed, falling back to userinfo: %v", err)
+
+	userInfo, uerr := s.resolveOIDCUserInfo(ctx, cfg, &oidcTokenResponse{
+		AccessToken: externalAccessToken,
+	})
+	if uerr != nil {
+		return nil, uerr
+	}
+
+	// issuer 校验：确保这个 token 来自我们配置的那个 IdP，而不是任意一个
+	// 恰好也提供 userinfo 端点的第三方。
+	if iss := extractClaimAsString(userInfo.Claims, "iss"); iss != "" {
+		expected := strings.TrimSuffix(strings.TrimSpace(cfg.IssuerURL), "/")
+		if expected != "" && strings.TrimSuffix(iss, "/") != expected {
+			return nil, fmt.Errorf("unexpected token issuer %q", iss)
+		}
+	}
+	return userInfo, nil
+}
+
+// issueTokensForOIDCUser 按 email 找/建本系统用户，并为其签发本系统 token。
+//
+// LoginWithOIDC 与 LoginWithExternalToken 共用这一段：两条路径的差别只在
+// 「怎么拿到 IdP 的身份」，之后的「落到哪个本地用户、签什么 token」完全一致。
+func (s *userService) issueTokensForOIDCUser(
+	ctx context.Context,
+	userInfo *types.OIDCUserInfo,
+	provisioning types.TenantProvisioningMode,
+) (*types.OIDCCallbackResponse, bool, error) {
 	user, err := s.userRepo.GetUserByEmail(ctx, userInfo.Email)
 	if err != nil && !isUserLookupNotFound(err) {
-		return nil, fmt.Errorf("failed to query user by email: %w", err)
+		return nil, false, fmt.Errorf("failed to query user by email: %w", err)
 	}
 	isNewUser := false
 	if isUserLookupNotFound(err) || user == nil {
 		user, err = s.provisionOIDCUser(ctx, userInfo, provisioning)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		isNewUser = true
 	}
 
 	if !user.IsActive {
-		return &types.OIDCCallbackResponse{Success: false, Message: "Account is disabled"}, nil
+		return &types.OIDCCallbackResponse{Success: false, Message: "Account is disabled"}, isNewUser, nil
 	}
 
 	// Resolve target tenant once so the JWT claim and the tenant we
@@ -534,7 +632,7 @@ func (s *userService) LoginWithOIDC(
 	resolvedTenantID := s.resolveLoginTenantID(ctx, user)
 	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, resolvedTenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate local tokens: %w", err)
+		return nil, isNewUser, fmt.Errorf("failed to generate local tokens: %w", err)
 	}
 
 	// 拉取 tenant + memberships，让 OIDC 登录的返回结构与本地登录一致，
@@ -559,7 +657,7 @@ func (s *userService) LoginWithOIDC(
 		Token:        accessToken,
 		RefreshToken: refreshToken,
 		IsNewUser:    isNewUser,
-	}, nil
+	}, isNewUser, nil
 }
 
 // GetUserByID gets a user by ID
@@ -1674,6 +1772,13 @@ func (s *userService) resolveOIDCUserInfo(ctx context.Context, cfg *config.OIDCA
 		return nil, errors.New("OIDC provider returned no user claims")
 	}
 
+	return buildOIDCUserInfo(cfg, claims), nil
+}
+
+// buildOIDCUserInfo 把「一堆 claims」映射成 OIDCUserInfo。
+// resolveOIDCUserInfo（走 userinfo/id_token）与 resolveExternalTokenUserInfo
+// （直接验签外部 access_token）两条路径共用这一段映射规则。
+func buildOIDCUserInfo(cfg *config.OIDCAuthConfig, claims map[string]interface{}) *types.OIDCUserInfo {
 	info := &types.OIDCUserInfo{Claims: claims}
 	if sub, _ := claims["sub"].(string); sub != "" {
 		info.Subject = sub
@@ -1689,7 +1794,7 @@ func (s *userService) resolveOIDCUserInfo(ctx context.Context, cfg *config.OIDCA
 	if info.Username == "" && info.Email != "" {
 		info.Username = strings.Split(info.Email, "@")[0]
 	}
-	return info, nil
+	return info
 }
 
 func (s *userService) fetchOIDCUserInfo(ctx context.Context, endpoint, accessToken string) (map[string]interface{}, error) {
@@ -1990,6 +2095,70 @@ func (s *userService) fetchOIDCJWKS(ctx context.Context, jwksURI string) (*oidcJ
 }
 
 const oidcIDTokenLeeway = 2 * time.Minute
+
+// verifyOIDCExternalToken 校验「外部应用带来的 IdP access_token」。
+//
+// 与 verifyOIDCIDToken 的区别只有一处，但那一处很关键：
+// 外部 token 的 aud 是「签发它那个应用」的 client_id（例：GEO-K 的
+// 514234b5bfd8031ebd4f），不是本系统的 client_id。所以这里用一份
+// 「允许名单」来判 audience：名单 = 本系统 client_id + 配置里显式放行的
+// 外部 client_id（OIDC_AUTH_EXCHANGE_AUDIENCES）。名单之外一律拒绝。
+//
+// Casdoor 的 aud 是一个「数组」，jwt/v5 的 ClaimStrings 兼容这种情况；
+// 而 WithAudience(a, b...) 的语义是「token 的 aud 里至少命中一个即可」，
+// 正好就是我们要的白名单语义。
+func (s *userService) verifyOIDCExternalToken(
+	ctx context.Context, cfg *config.OIDCAuthConfig, accessToken string,
+) (map[string]interface{}, error) {
+	if strings.TrimSpace(cfg.JwksURI) == "" {
+		return nil, errors.New("cannot verify external token: no jwks_uri configured")
+	}
+	if strings.TrimSpace(cfg.IssuerURL) == "" {
+		return nil, errors.New("cannot verify external token: issuer is not configured")
+	}
+
+	allowedAudiences := make([]string, 0, 1+len(cfg.ExchangeAudiences))
+	if own := strings.TrimSpace(cfg.ClientID); own != "" {
+		allowedAudiences = append(allowedAudiences, own)
+	}
+	for _, a := range cfg.ExchangeAudiences {
+		if a = strings.TrimSpace(a); a != "" {
+			allowedAudiences = append(allowedAudiences, a)
+		}
+	}
+	if len(allowedAudiences) == 0 {
+		return nil, errors.New("cannot verify external token: no allowed audience configured")
+	}
+
+	jwks, err := s.fetchOIDCJWKS(ctx, cfg.JwksURI)
+	if err != nil {
+		return nil, err
+	}
+
+	keyFunc := func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected token signing method: %v", token.Header["alg"])
+		}
+		kid, _ := token.Header["kid"].(string)
+		return jwks.rsaKeyForKid(kid)
+	}
+
+	claims := jwt.MapClaims{}
+	if _, err := jwt.NewParser(
+		jwt.WithValidMethods([]string{"RS256", "RS384", "RS512"}),
+		jwt.WithExpirationRequired(),
+		jwt.WithLeeway(oidcIDTokenLeeway),
+		jwt.WithIssuer(strings.TrimSpace(cfg.IssuerURL)),
+		jwt.WithAudience(allowedAudiences...),
+	).ParseWithClaims(accessToken, claims, keyFunc); err != nil {
+		return nil, fmt.Errorf("external token verification failed: %w", err)
+	}
+	verified := map[string]interface{}(claims)
+	if strings.TrimSpace(extractClaimAsString(verified, "sub")) == "" {
+		return nil, errors.New("external token missing sub claim")
+	}
+	return verified, nil
+}
 
 // verifyOIDCIDToken cryptographically verifies an OIDC id_token: it checks the
 // RSA signature against the provider's JWKS (matched by kid) and validates the

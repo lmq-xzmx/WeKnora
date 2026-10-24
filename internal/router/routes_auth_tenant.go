@@ -220,6 +220,10 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 	r.GET("/auth/oidc/config", handler.GetOIDCConfig)
 	r.GET("/auth/oidc/url", handler.GetOIDCAuthorizationURL)
 	r.GET("/auth/oidc/callback", handler.OIDCRedirectCallback)
+	// 服务端到服务端的 SSO 桥：上层应用（如同一个 Casdoor 的 GEO-Knowledge）
+	// 用它已有的 IdP access_token 换发本系统 token，省掉浏览器跳转。
+	// 凭据就是 body 里的 token 本身，所以按未登录接口处理，但必须限流。
+	r.POST("/auth/oidc/token-exchange", publicAuthRL, handler.OIDCExchangeToken)
 	// /auth/oidc/start：直连 302 跳转到 OIDC 提供方，供前端无法走 JS 拉取 URL 的场景直接发起登录
 	r.GET("/auth/oidc/start", handler.OIDCStart)
 	r.POST("/auth/refresh", handler.RefreshToken)

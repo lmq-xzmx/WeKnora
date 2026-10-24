@@ -134,6 +134,10 @@ type SharedKnowledgeBaseInfo struct {
 	Permission     string    `json:"permission"`
 	SourceTenantID uint64    `json:"source_tenant_id"`
 	SharedAt       time.Time `json:"shared_at"`
+	// KnowledgeBase 是被共享的知识库本体。
+	// 服务端 sharedKBRow 把 KB 嵌在 knowledge_base 字段里返回；缺了这个
+	// 字段，调用方只能拿到 share 元信息，看不到库的 id/name/条目数。
+	KnowledgeBase *KnowledgeBase `json:"knowledge_base,omitempty"`
 }
 
 // SharedAgentInfo represents a shared agent

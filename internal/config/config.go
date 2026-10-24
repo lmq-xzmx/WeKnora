@@ -33,6 +33,8 @@ type Config struct {
 	PromptTemplates *PromptTemplatesConfig `yaml:"prompt_templates" json:"prompt_templates"`
 	IM              *IMConfig              `yaml:"im"               json:"im"`
 	Agent           *AgentConfig           `yaml:"agent"            json:"agent"`
+	// GEOKnowledgeWebhook 供 GEO-Knowledge 回调拉取 WeKnora 侧变更
+	GEOKnowledgeWebhook *GEOKnowledgeWebhookConfig `yaml:"geo_knowledge_webhook" json:"geo_knowledge_webhook"`
 	// FrontendBaseURL is the externally-visible origin of the SPA, used
 	// to compose absolute share-link URLs. Empty falls back to a host-
 	// relative URL ("/register?token=…") which the SPA then resolves
@@ -326,6 +328,17 @@ type OIDCAuthConfig struct {
 	JwksURI               string               `yaml:"jwks_uri"               json:"jwks_uri"`
 	Scopes                []string             `yaml:"scopes"                 json:"scopes"`
 	UserInfoMapping       *OIDCUserInfoMapping `yaml:"user_info_mapping"      json:"user_info_mapping"`
+
+	// ExchangeAudiences 列出「允许拿别家应用的 IdP token 来换发本系统 token」
+	// 的应用 client_id。
+	//
+	// 典型场景：上层应用（GEO-Knowledge）用自己的 Casdoor client_id 登录，
+	// 拿到一个 aud 为「上层应用 client_id」的 access_token，拿它调本系统的
+	// token-exchange 端点换发本系统 token。此时该 token 的 aud 并不是本系统
+	// 的 client_id，必须显式放行。
+	//
+	// 留空则只接受本系统自己的 client_id（fail-closed）。
+	ExchangeAudiences []string `yaml:"exchange_audiences" json:"exchange_audiences"`
 }
 
 // PromptTemplateI18n holds localized name and description for a prompt template.
@@ -592,6 +605,7 @@ func LoadConfig() (*Config, error) {
 	applyKnowledgeBaseEnvOverrides(&cfg)
 	applyAuthAndTenantDefaults(&cfg)
 	applyAuditDefaults(&cfg)
+	applyGEOKnowledgeWebhookEnvOverrides(&cfg)
 
 	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err
@@ -741,6 +755,11 @@ func applyOIDCEnvOverrides(cfg *Config) {
 	if value := strings.TrimSpace(os.Getenv("OIDC_USER_INFO_MAPPING_EMAIL")); value != "" {
 		cfg.OIDCAuth.UserInfoMapping.Email = value
 	}
+	// 允许哪些「外部应用的 client_id」用它们的 IdP token 来换发本系统 token。
+	// 逗号或空格分隔。
+	if value := strings.TrimSpace(os.Getenv("OIDC_AUTH_EXCHANGE_AUDIENCES")); value != "" {
+		cfg.OIDCAuth.ExchangeAudiences = splitAndTrimList(value)
+	}
 
 	if cfg.OIDCAuth.ProviderDisplayName == "" {
 		cfg.OIDCAuth.ProviderDisplayName = "OIDC"
@@ -757,6 +776,27 @@ func applyOIDCEnvOverrides(cfg *Config) {
 	if cfg.OIDCAuth.DiscoveryURL == "" && cfg.OIDCAuth.IssuerURL != "" {
 		cfg.OIDCAuth.DiscoveryURL = strings.TrimRight(cfg.OIDCAuth.IssuerURL, "/") + "/.well-known/openid-configuration"
 	}
+}
+
+// splitAndTrimList 把「逗号或空格分隔的列表」解析成去空去重的字符串切片。
+func splitAndTrimList(value string) []string {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n'
+	})
+	out := make([]string, 0, len(fields))
+	seen := make(map[string]struct{}, len(fields))
+	for _, f := range fields {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		if _, ok := seen[f]; ok {
+			continue
+		}
+		seen[f] = struct{}{}
+		out = append(out, f)
+	}
+	return out
 }
 
 func applyKnowledgeBaseEnvOverrides(cfg *Config) {
@@ -1145,4 +1185,36 @@ func loadPromptTemplates(configDir string) (*PromptTemplatesConfig, error) {
 // WebSearchConfig represents the web search configuration
 type WebSearchConfig struct {
 	Timeout int `yaml:"timeout" json:"timeout"` // 超时时间（秒）
+}
+
+// GEOKnowledgeWebhookConfig 配置 WeKnora → GEO-Knowledge 变更回调
+type GEOKnowledgeWebhookConfig struct {
+	// WebhookURL 是 GEO-Knowledge 侧的接收端点，如 http://localhost:5002/api/v1/webhook/weknora
+	WebhookURL string `yaml:"webhook_url" json:"webhook_url"`
+	// Token 是调用 GEO-Knowledge 所需的 Bearer 凭证。
+	// GEO-Knowledge 的 /api/v1/webhook/* 路由组挂了 CasdoorJWTOrAPIKey 中间件，
+	// 服务间调用需要携带它的 GEO_FLOW_API_KEY（Authorization: Bearer <key>）。
+	Token string `yaml:"token" json:"token"`
+	// WebhookSecret 是用于验签的共享密钥
+	WebhookSecret string `yaml:"webhook_secret" json:"webhook_secret"`
+	// Enabled 是否启用回调，默认 false
+	Enabled bool `yaml:"enabled" json:"enabled"`
+}
+
+func applyGEOKnowledgeWebhookEnvOverrides(cfg *Config) {
+	if cfg.GEOKnowledgeWebhook == nil {
+		cfg.GEOKnowledgeWebhook = &GEOKnowledgeWebhookConfig{}
+	}
+	if value := strings.TrimSpace(os.Getenv("GEO_KNOWLEDGE_WEBHOOK_URL")); value != "" {
+		cfg.GEOKnowledgeWebhook.WebhookURL = value
+	}
+	if value := strings.TrimSpace(os.Getenv("GEO_KNOWLEDGE_WEBHOOK_TOKEN")); value != "" {
+		cfg.GEOKnowledgeWebhook.Token = value
+	}
+	if value := strings.TrimSpace(os.Getenv("GEO_KNOWLEDGE_WEBHOOK_SECRET")); value != "" {
+		cfg.GEOKnowledgeWebhook.WebhookSecret = value
+	}
+	if value := strings.TrimSpace(os.Getenv("GEO_KNOWLEDGE_WEBHOOK_ENABLED")); value != "" {
+		cfg.GEOKnowledgeWebhook.Enabled = strings.EqualFold(value, "true")
+	}
 }

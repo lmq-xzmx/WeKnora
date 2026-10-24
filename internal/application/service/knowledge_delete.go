@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/integration/geoknowledge"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -620,6 +621,19 @@ func (s *knowledgeService) executeKnowledgeDelete(plan *knowledgeDeletePlan, sin
 		recordKBActivity(ctx, s.audit, tenantInfo.ID, kbID, types.AuditActionKnowledgeBatchDeleted,
 			"knowledge", "", types.AuditOutcomeSuccess, details)
 	}
+
+	// Notify GEO-Knowledge of deletions
+	if s.geoKWebhook != nil {
+		go func() {
+			for _, k := range knowledgeList {
+				if err := s.geoKWebhook.Notify(context.Background(), geoknowledge.EventDeleted, geoknowledge.EntityKnowledge,
+					k.ID, k.Title, "", "", k.Source, k.KnowledgeBaseID); err != nil {
+					logger.Warnf(ctx, "GEO-Knowledge webhook delete notify failed for %s: %v", k.ID, err)
+				}
+			}
+		}()
+	}
+
 	return nil
 }
 

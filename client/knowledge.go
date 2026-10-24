@@ -847,12 +847,27 @@ func (c *Client) UpdateImageInfo(ctx context.Context,
 	return parseResponse(resp, &response)
 }
 
+// Manual knowledge 状态。服务端只接受这两个值。
+const (
+	// ManualKnowledgeStatusDraft 只落库，不切分/向量化，RAG 检索不到。
+	ManualKnowledgeStatusDraft = "draft"
+	// ManualKnowledgeStatusPublish 落库后立即排入处理队列，建索引、可被检索。
+	ManualKnowledgeStatusPublish = "publish"
+)
+
+// ChannelAPI 标记该条目来自外部 API 调用（对应服务端的 Channel 常量）。
+const ChannelAPI = "api"
+
 // CreateManualKnowledgeRequest contains the parameters for creating a manual Markdown knowledge entry.
+//
+// Status 决定服务端是否建索引：空值等价于 "draft"（服务端只落库，不切分/向量化，
+// 该条目在 WeKnora 的 RAG 检索里查不到）。要让它真正可检索必须显式传 "publish"。
 type CreateManualKnowledgeRequest struct {
 	Title   string `json:"title"`
 	Content string `json:"content"`
 	TagID   string `json:"tag_id,omitempty"`
 	Channel string `json:"channel,omitempty"`
+	Status  string `json:"status,omitempty"`
 }
 
 // UpdateManualKnowledgeRequest contains the parameters for updating a manual Markdown knowledge entry.

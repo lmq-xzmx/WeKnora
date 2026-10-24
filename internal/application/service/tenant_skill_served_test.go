@@ -221,7 +221,7 @@ func TestServedViewReadsThePreviousVersionOnlyWhileItIsServed(t *testing.T) {
 }
 
 func TestServedVersionRoundTripsThroughTheRepository(t *testing.T) {
-	repo := catalogTestRepo(t, "file:"+t.Name()+"?mode=memory&cache=shared")
+	repo := catalogTestRepo(t)
 	ctx := context.Background()
 	now := time.Now()
 	require.NoError(t, repo.CreateSkill(ctx, &types.TenantSkillEntity{

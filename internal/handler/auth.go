@@ -305,6 +305,53 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.NewAuthLoginResponse(response))
 }
 
+// OIDCExchangeToken godoc
+// @Summary      用外部 IdP token 换发本系统 token
+// @Description  上层应用已用同一个 IdP 完成登录时，用它手里的 IdP access_token 换发本系统 token（服务端到服务端，免浏览器跳转）
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        access_token  body  string  true  "外部 IdP 签发的 access_token"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  map[string]interface{}
+// @Failure      401  {object}  map[string]interface{}
+// @Router       /auth/oidc/token-exchange [post]
+func (h *AuthHandler) OIDCExchangeToken(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req struct {
+		AccessToken string `json:"access_token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "access_token is required"})
+		return
+	}
+
+	resp, err := h.userService.LoginWithExternalToken(
+		ctx, strings.TrimSpace(req.AccessToken), h.resolveDefaultTenantMode(ctx),
+	)
+	if err != nil {
+		// 细节只进日志：外部调用方拿到的错误信息不应泄露 IdP 内部结构。
+		logger.Errorf(ctx, "OIDC token exchange failed: %v", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token exchange failed"})
+		return
+	}
+	if !resp.Success {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": resp.Message})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":       true,
+		"token":         resp.Token,
+		"refresh_token": resp.RefreshToken,
+		"user":          resp.User,
+		"tenant":        resp.Tenant,
+		"memberships":   resp.Memberships,
+		"is_new_user":   resp.IsNewUser,
+	})
+}
+
 // GetOIDCAuthorizationURL godoc
 // @Summary      获取OIDC授权地址
 // @Description  根据后端OIDC配置生成第三方登录跳转地址
