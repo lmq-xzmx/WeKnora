@@ -10,7 +10,11 @@ staticClients:
       - 'http://127.0.0.1:5173/api/v1/auth/oidc/callback'
       - 'http://127.0.0.1/api/v1/auth/oidc/callback'
     name: 'WeKnora'
-    # add a "secret" field here
+    # 用环境变量注入，别把 client secret 写进版本库。
+    # dex 从 v2.24 起支持 $(VAR) 形式的环境变量替换。
+    # 复用 app 的同一个变量：dex 的 static client secret 必须和
+    # OIDC_AUTH_CLIENT_SECRET 一致，用两个变量名容易漏填或填成不一样的值。
+    secret: $(OIDC_AUTH_CLIENT_SECRET)
 enablePasswordDB: true
 oauth2:
   responseTypes: 

@@ -772,6 +772,9 @@ services:
     volumes:
       - ./misc/dex-config.yaml:/etc/dex/config.yaml
     command: ["dex", "serve", "/etc/dex/config.yaml"]
+    # dex-config.yaml 用 $(OIDC_AUTH_CLIENT_SECRET) 引用，避免 client secret 进版本库。
+    environment:
+      - OIDC_AUTH_CLIENT_SECRET=${OIDC_AUTH_CLIENT_SECRET:-}
     # 必须与 app 同网，app 才能用容器名 dex 访问 issuer；
     # 缺 restart 时 Docker Desktop VM 重启后 dex 不会再起来。
     networks:

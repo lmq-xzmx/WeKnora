@@ -5,6 +5,16 @@ services:
       - ./frontend/dist:/usr/share/nginx/html
     networks:
       - weknora-network
+    environment:
+      # WeKnora 后端跑在本机（app 服务不再使用），nginx 反代到宿主机。
+      #
+      # 这里写 IP 字面量而不是 host.docker.internal：nginx 用的是变量式
+      # proxy_pass，靠 resolver(127.0.0.11) 每次重解析，而 Docker 内嵌 DNS
+      # 不认 host.docker.internal（它只存在于 /etc/hosts，nginx 不查 hosts）。
+      # 192.168.65.254 是 Docker Desktop 固定的 host-gateway 地址，容器重建不变。
+      APP_HOST: 192.168.65.254
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   app:
     environment:
       OIDC_AUTH_AUTHORIZATION_ENDPOINT: http://36.212.140.68:3012/login/oauth/authorize
