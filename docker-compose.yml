@@ -40,6 +40,12 @@ services:
       dockerfile: docker/Dockerfile.app
       args:
         - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
+        # Go module 代理。留空则用官方 proxy.golang.org（国内常超时）；
+        # 国内网络在 .env 里设 GOPROXY_ARG=https://goproxy.cn,direct
+        - GOPROXY_ARG=${GOPROXY_ARG:-}
+        # PyPI 镜像。astral.sh（GitHub Releases CDN）在国内不稳时，
+        # Dockerfile 会回退到从 PyPI 装 uv，此时用这个镜像。
+        - UV_INDEX_URL_ARG=${UV_INDEX_URL_ARG:-}
         - WITH_ANYDOC=${WITH_ANYDOC:-1}
     container_name: WeKnora-app
     ports:
@@ -144,8 +150,6 @@ services:
       - DB_USER=${DB_USER:-}
       - DB_PASSWORD=${DB_PASSWORD:-}
       - DB_NAME=${DB_NAME:-}
-      # SQLite 驱动时使用（DB_DRIVER=sqlite）；postgres 驱动忽略
-      # - DB_PATH=${DB_PATH:-}
       # ========== Langfuse (optional observability) ==========
       # Enabled automatically when LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY are set.
       # See website-docs/03-features/16-observability.md for the full list of tuning knobs.
@@ -373,6 +377,8 @@ services:
       - OIDC_AUTH_USER_INFO_ENDPOINT=${OIDC_AUTH_USER_INFO_ENDPOINT:-}
       - OIDC_AUTH_JWKS_URI=${OIDC_AUTH_JWKS_URI:-}
       - OIDC_AUTH_SCOPES=${OIDC_AUTH_SCOPES:-}
+      # 允许哪些「外部应用的 client_id」用它们的 IdP token 来换发本系统 token
+      - OIDC_AUTH_EXCHANGE_AUDIENCES=${OIDC_AUTH_EXCHANGE_AUDIENCES:-}
       - OIDC_USER_INFO_MAPPING_USER_NAME=${OIDC_USER_INFO_MAPPING_USER_NAME:-}
       - OIDC_USER_INFO_MAPPING_EMAIL=${OIDC_USER_INFO_MAPPING_EMAIL:-}
       # 飞书云文档解析模式 export：导出为docx，blocks：根据飞书云文档块解析为markdown。默认为:export
@@ -410,14 +416,16 @@ services:
       args:
         - APT_MIRROR=${APT_MIRROR:-}
     container_name: WeKnora-docreader
-    # docreader gRPC ships without auth/TLS and is only consumed by the app
-    # container over the weknora-network (DOCREADER_ADDR defaults to
-    # docreader:50051), so we don't publish 50051 to the host. `expose` keeps
-    # the port reachable inside the compose network for documentation only.
-    # If you need to call docreader from outside the host (e.g. for debugging),
-    # add a `ports:` entry locally, preferably bound to 127.0.0.1.
+    # docreader gRPC ships without auth/TLS and is normally only consumed by
+    # the app container over the weknora-network (DOCREADER_ADDR defaults to
+    # docreader:50051). `expose` keeps the port reachable inside the compose
+    # network. We additionally bind it to 127.0.0.1:15051 so that a WeKnora
+    # backend running directly on the host can reach it — loopback only, so
+    # it stays unreachable from the network.
     expose:
       - "50051"
+    ports:
+      - "127.0.0.1:15051:50051"
     volumes:
       - docreader-tmp:/tmp/docreader
     environment:
@@ -549,6 +557,10 @@ services:
     container_name: WeKnora-redis
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     restart: always
+    # 绑定到 127.0.0.1 的高位端口：本机跑 WeKnora 后端时连这个 redis。
+    # 不用默认 6379 —— 主机上的 6379 已经被 geo-flow-redis 占用。
+    ports:
+      - "127.0.0.1:16390:6379"
     networks:
       - weknora-network
 
@@ -617,6 +629,10 @@ services:
       retries: 3
     networks:
       - weknora-network
+    # MinIO 没有 restart 策略时，Docker Desktop VM 一重启它就会被 SIGKILL
+    # 且不再拉起；WeKnora-app 启动时连不上 MinIO 会 panic 崩溃循环，
+    # 表现为整站 API 404。必须与 app/frontend 一样常驻。
+    restart: unless-stopped
 
   neo4j:
     image: 100.108.142.49:5000/neo4j:2025.10.1
@@ -756,6 +772,11 @@ services:
     volumes:
       - ./misc/dex-config.yaml:/etc/dex/config.yaml
     command: ["dex", "serve", "/etc/dex/config.yaml"]
+    # 必须与 app 同网，app 才能用容器名 dex 访问 issuer；
+    # 缺 restart 时 Docker Desktop VM 重启后 dex 不会再起来。
+    networks:
+      - weknora-network
+    restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Langfuse 自建可观测栈 (opt-in via `--profile langfuse`)

@@ -92,6 +92,8 @@ FROM debian:12.12-slim@sha256:d5d3f9c23164ea16f31852f95bd5959aad1c5e854332fe00f7
 WORKDIR /app
 
 ARG APK_MIRROR_ARG
+# PyPI 镜像（uv 的 fallback 安装路径用；留空用官方 pypi.org）。
+ARG UV_INDEX_URL_ARG
 
 # Pairing derives the gateway URL from the user's page origin by default.
 ENV BROWSERSKILL_BINARY=/opt/weknora/browserskill/bsk \
@@ -119,13 +121,25 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         gosu \
         ffmpeg && \
     python3 -m pip install --break-system-packages --upgrade pip setuptools wheel && \
-    mkdir -p /home/appuser/.local/bin && \
-    curl -LsSf https://astral.sh/uv/install.sh | CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh && \
-    chown -R appuser:appuser /home/appuser && \
-    ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx && \
-    chmod +x /usr/local/bin/uvx && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Install uv as its own layer so a failure here can be retried without
+# re-running the apt step above. astral.sh resolves to the GitHub Releases
+# CDN (releases.astral.sh), which is unreliable on some networks; when it
+# fails we fall back to installing uv from PyPI (optionally via a mirror).
+RUN mkdir -p /home/appuser/.local/bin && \
+    (curl -LsSf --retry 3 --retry-delay 2 https://astral.sh/uv/install.sh | \
+        CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh \
+        || python3 -m pip install --break-system-packages \
+            ${UV_INDEX_URL_ARG:+--index-url=$UV_INDEX_URL_ARG} uv) && \
+    if [ -x /home/appuser/.local/bin/uvx ]; then \
+        ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx; \
+    else \
+        ln -sf "$(command -v uvx)" /usr/local/bin/uvx; \
+    fi && \
+    chown -R appuser:appuser /home/appuser && \
+    chmod +x /usr/local/bin/uvx
 
 # Create data directories and set permissions
 RUN mkdir -p /data/files && \

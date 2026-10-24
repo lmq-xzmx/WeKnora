@@ -103,6 +103,9 @@ services:
     profiles:
       - minio
       - full
+    # 与 app/frontend 一样常驻：Docker Desktop VM 重启后没有 restart 策略
+    # 的服务会被 SIGKILL 且不再拉起，app 会因连不上 MinIO 崩溃循环。
+    restart: unless-stopped
 
   qdrant:
     image: qdrant/qdrant:v1.16.2
@@ -365,6 +368,7 @@ services:
     profiles:
       - dex
       - full
+    restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Langfuse 自建栈（dev 对称版）
