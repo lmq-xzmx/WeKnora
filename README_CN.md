@@ -152,7 +152,7 @@ docker compose up -d    # 用新镜像重建容器
 |------|----------|
 | **Docker Compose** | 上面的标准部署，功能完整，多服务 |
 | **Kubernetes (Helm)** | 生产集群；Chart 位于 [`helm/`](./helm) |
-| **Lite 单二进制** | 本机或低资源环境，零外部依赖（SQLite + 内存队列）；与标准版的差异见 [Lite 与标准版区别](./docs/LITE.md) |
+| **Lite 单二进制** | 本机或低资源环境，单进程应用（内存队列 + 外部 PostgreSQL）；与标准版的差异见 [Lite 与标准版区别](./docs/LITE.md) |
 | **桌面应用** | 带图形界面的 Lite 运行时，免登录启动，macOS 上提供本机沙箱；尚未提供安装包，需自行构建 |
 
 全部部署形态、硬件要求与常见拓扑见[安装部署](https://weknora.weixin.qq.com/docs/01-getting-started/02-installation)。

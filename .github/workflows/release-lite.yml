@@ -102,7 +102,7 @@ jobs:
           if [ "${{ matrix.goos }}" = "darwin" ]; then
             export CGO_LDFLAGS="-Wl,-no_warn_duplicate_libraries"
           fi
-          go build -tags "sqlite_fts5" -ldflags="${LDFLAGS}" \
+          go build -ldflags="${LDFLAGS}" \
             -o WeKnora-lite ./cmd/server
 
       - name: Package tarball
@@ -116,10 +116,6 @@ jobs:
           cp docs/LITE.md "${ARCHIVE}/README.md"
           if [ -d config ]; then
             cp -r config "${ARCHIVE}/config"
-          fi
-          if [ -d migrations/sqlite ]; then
-            mkdir -p "${ARCHIVE}/migrations/sqlite"
-            cp -r migrations/sqlite/* "${ARCHIVE}/migrations/sqlite/"
           fi
           if [ -f deploy/weknora-lite.service ]; then
             cp deploy/weknora-lite.service "${ARCHIVE}/"
@@ -209,7 +205,7 @@ jobs:
           export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
           export CGO_CFLAGS="-Wno-deprecated-declarations"
           cd cmd/desktop
-          go build -p 1 -buildvcs=false -tags "desktop,sqlite_fts5,production" -o _prebuild_tmp.exe . || true
+          go build -p 1 -buildvcs=false -tags "desktop,production" -o _prebuild_tmp.exe . || true
           rm -f _prebuild_tmp.exe
 
       - name: Build desktop app
@@ -221,11 +217,11 @@ jobs:
           LDFLAGS="$(./scripts/get_version.sh ldflags) -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"
           export CGO_CFLAGS="-Wno-deprecated-declarations"
 
-          BUILD_TAGS="sqlite_fts5"
+          BUILD_TAGS=""
           NSIS_FLAG=""
 
           if [ "${{ runner.os }}" = "Linux" ]; then
-            BUILD_TAGS="sqlite_fts5 webkit2_41"
+            BUILD_TAGS="webkit2_41"
           fi
           if [ "${{ runner.os }}" = "macOS" ]; then
             export CGO_LDFLAGS="-Wl,-no_warn_duplicate_libraries"
@@ -252,14 +248,10 @@ jobs:
           RESOURCES="${SRC}/Contents/Resources"
 
           mkdir -p "${RESOURCES}/config"
-          mkdir -p "${RESOURCES}/migrations/sqlite"
           bash ./scripts/copy-licenses.sh "${RESOURCES}"
 
           if [ -f .env.lite.example ]; then
             cp .env.lite.example "${RESOURCES}/.env"
-          fi
-          if [ -d migrations/sqlite ]; then
-            cp -r migrations/sqlite/* "${RESOURCES}/migrations/sqlite/"
           fi
           if [ -d config ]; then
             cp -r config/* "${RESOURCES}/config/"
@@ -293,10 +285,6 @@ jobs:
           cp docs/LITE.md "${ARCHIVE}/README.md"
           if [ -d config ]; then
             cp -r config "${ARCHIVE}/config"
-          fi
-          if [ -d migrations/sqlite ]; then
-            mkdir -p "${ARCHIVE}/migrations/sqlite"
-            cp -r migrations/sqlite/* "${ARCHIVE}/migrations/sqlite/"
           fi
           tar czf "${ARCHIVE}.tar.gz" "${ARCHIVE}"
           shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"

@@ -39,7 +39,7 @@ docker compose logs --tail=200 postgres redis
 
 **不要假定失败迁移已经完整回滚。** 实际状态取决于 SQL 的事务边界和失败位置。恢复前保留日志、备份数据库，核对失败版本对应的迁移文件与实际 schema；不要靠删除数据卷或直接修改版本号跳过错误。
 
-PostgreSQL 使用 `migrations/versioned/`，SQLite 使用 `migrations/sqlite/`。下面的 Make 命令调用 PostgreSQL 迁移脚本；Lite 的 SQLite 数据库应使用对应驱动和迁移目录处理，不能套用 PostgreSQL DSN。
+WeKnora 只支持 PostgreSQL，迁移脚本统一在 `migrations/versioned/`。下面的 Make 命令调用 PostgreSQL 迁移脚本，直接套用即可（SQLite 已全面退场，不再有独立的迁移目录）。
 
 ```bash
 make migrate-version

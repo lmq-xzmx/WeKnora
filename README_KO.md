@@ -162,7 +162,7 @@ docker compose up -d    # 새 이미지로 컨테이너 재생성
 |------|------|
 | **Docker Compose** | 위의 표준 배포. 전체 기능, 다중 서비스 구성 |
 | **Kubernetes (Helm)** | 운영 클러스터. Chart는 [`helm/`](./helm)에 있습니다 |
-| **Lite 단일 바이너리** | 로컬 또는 저사양 환경, 외부 의존성 없음(SQLite + 인메모리 큐). 표준판과의 차이는 [Lite와 표준판 비교](./docs/LITE.md)(중국어) |
+| **Lite 단일 바이너리** | 로컬 또는 저사양 환경, 단일 프로세스(인메모리 큐 + 외부 PostgreSQL). 표준판과의 차이는 [Lite와 표준판 비교](./docs/LITE.md)(중국어) |
 | **데스크톱 앱** | GUI가 있는 Lite 런타임. 로그인 없이 시작하며 macOS에서는 호스트 샌드박스를 제공. 설치 파일이 아직 없으므로 소스에서 빌드하세요 |
 
 모든 배포 형태, 하드웨어 요구 사항, 배포 토폴로지는 [설치 가이드](https://weknora.weixin.qq.com/docs/01-getting-started/02-installation)를 참고하세요.

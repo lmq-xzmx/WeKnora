@@ -8,7 +8,7 @@ WeKnora 由三个可独立开发的进程组成：
 
 | 组件 | 目录 | 语言 / 运行时 | 版本要求（来源） |
 | --- | --- | --- | --- |
-| 主后端 `app` | `cmd/server` + `internal/` | Go | **Go 1.26.0**（`go.mod` 中 `go 1.26.0`），需 CGO（DuckDB、sqlite-vec 绑定） |
+| 主后端 `app` | `cmd/server` + `internal/` | Go | **Go 1.26.0**（`go.mod` 中 `go 1.26.0`），部分包需 CGO（DuckDB） |
 | 文档解析服务 `docreader` | `docreader/` | Python + gRPC | **Python >= 3.10.18**（`docreader/pyproject.toml` 中 `requires-python`），依赖用 **uv** 管理（仓库含 `uv.lock`，Docker 内 `uv sync --locked`） |
 | 前端 `frontend` | `frontend/` | Node.js + Vue 3 | Node 22 系（`devDependencies` 含 `@tsconfig/node22`、`@types/node ^22`），Vite 7 + TypeScript ~6.0 + Vue 3.5 + TDesign，版本号 `0.8.2` |
 | CLI | `cli/`（独立 Go module） | Go | Go 1.26（`.github/workflows/cli.yml` 矩阵 `go: ['1.26']`） |
@@ -93,12 +93,12 @@ uv run -m docreader.main      # 启动 gRPC 服务（与 Dockerfile CMD 一致�
 
 docreader 的大量调优参数（PDF 渲染 DPI、扫描件判定、SSRF 白名单、gRPC TLS 等）以 `DOCREADER_*` 环境变量注入，完整清单见 `docker-compose.dev.yml` 的 `docreader.environment` 段。
 
-### Lite 模式（零外部依赖） {#_2-3-lite-模式-零外部依赖}
+### Lite 模式（单进程） {#_2-3-lite-模式-单进程}
 
-Lite 模式把 SQLite（+sqlite-vec）与内存队列编译进单个二进制，适合快速体验与桌面端：
+Lite 模式把应用与内存队列编进单个二进制（数据库仍是外部的 PostgreSQL），适合快速体验与桌面端：
 
 ```bash
-make build-lite     # 先构建前端到 web/，再 CGO 构建 Go（tags: sqlite_fts5）；SKIP_FRONTEND=1 跳过前端
+make build-lite     # 先构建前端到 web/，再构建 Go；SKIP_FRONTEND=1 跳过前端
 make run-lite       # 依赖 .env.lite，构建并启动 WeKnora-lite
 make package-lite   # 打 tarball 发行包（scripts/package-lite.sh）
 make package-mac-app  # 打 macOS .app（scripts/package-mac-app.sh）
@@ -181,7 +181,7 @@ go test ./internal/infrastructure/chunker/...
 go test -run TestXxx ./internal/application/service/...
 ```
 
-主模块测试广泛使用 `go-sqlmock`、`miniredis` 等内存替身（见 `go.mod`），大部分无需真实数据库即可运行。部分包依赖 CGO（DuckDB/sqlite-vec）。
+主模块测试广泛使用 `go-sqlmock`、`miniredis` 等内存替身（见 `go.mod`），大部分无需真实数据库即可运行。部分包依赖 CGO（DuckDB）。
 
 ### docreader 测试（Python） {#_4-2-docreader-测试-python}
 

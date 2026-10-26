@@ -283,7 +283,7 @@ build-prod:
 	LDFLAGS="-X 'github.com/Tencent/小炬人/internal/handler.Version=$$VERSION' -X 'github.com/Tencent/小炬人/internal/handler.Edition=standard' -X 'github.com/Tencent/小炬人/internal/handler.CommitID=$$COMMIT_ID' -X 'github.com/Tencent/小炬人/internal/handler.BuildTime=$$BUILD_TIME' -X 'github.com/Tencent/小炬人/internal/handler.GoVersion=$$GO_VERSION' -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"; \
 	go build -tags "$(GO_BUILD_TAGS)" -ldflags="-w -s $$LDFLAGS" -o $(BINARY_NAME) $(MAIN_PATH)
 
-# Build Lite version (single binary, SQLite + in-memory queue)
+# Build Lite version (single binary, in-memory queue)
 # 会先构建前端到 web/，再构建 Go 二进制；SKIP_FRONTEND=1 可跳过前端
 build-lite:
 	@if [ -f frontend/package.json ] && [ "$${SKIP_FRONTEND:-}" != "1" ]; then \
@@ -301,7 +301,7 @@ build-lite:
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="-Wno-deprecated-declarations" \
 	CGO_LDFLAGS="$$(if [ "$$(uname)" = 'Darwin' ]; then echo '-Wl,-no_warn_duplicate_libraries'; fi)" \
-	go build -tags "sqlite_fts5" -ldflags="-w -s $$LDFLAGS" -o $(BINARY_NAME)-lite $(MAIN_PATH)
+	go build -ldflags="-w -s $$LDFLAGS" -o $(BINARY_NAME)-lite $(MAIN_PATH)
 
 # Run Lite version with .env.lite defaults
 run-lite: build-lite

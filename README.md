@@ -152,7 +152,7 @@ docker compose up -d    # Recreate containers with new images
 |--------|----------------|
 | **Docker Compose** | The standard deployment above: all features, multiple services |
 | **Kubernetes (Helm)** | Production clusters; the chart is in [`helm/`](./helm) |
-| **Lite single binary** | Local or low-resource use with no external dependencies (SQLite + in-memory queue); see [Lite vs. standard](./docs/LITE.md) |
+| **Lite single binary** | Local or low-resource use with a single app process (in-memory queue + an external PostgreSQL); see [Lite vs. standard](./docs/LITE.md) |
 | **Desktop app** | The Lite runtime with a GUI, login-free start and a macOS host sandbox; no installer is published yet, so build it from source |
 
 All options, hardware requirements and deployment topologies: [Installation guide](https://weknora.weixin.qq.com/docs/01-getting-started/02-installation).

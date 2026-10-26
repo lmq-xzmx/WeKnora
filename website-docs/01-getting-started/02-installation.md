@@ -9,8 +9,8 @@
 | Docker Compose（标准） | `docker-compose.yml` | ParadeDB（PostgreSQL） | Redis + Asynq | 生产 / 团队自托管，推荐 |
 | Docker Compose（开发） | `docker-compose.dev.yml` | 同上（仅基础设施进容器） | 同上 | 本地开发：app / frontend 在宿主机运行 |
 | Helm | `helm/` | ParadeDB（chart 内置） | Redis（chart 内置） | Kubernetes >= 1.25 |
-| Lite 单二进制 | `make build-lite` / `scripts/package-lite.sh` | SQLite（FTS5 + sqlite-vec） | 内存（无 Redis） | 个人 / 离线 / 低资源环境 |
-| 桌面应用（**未正式发布**） | `cmd/desktop`（Wails v2）+ `scripts/package-mac-app.sh` | SQLite | 内存 | 桌面单机使用，带图形界面与本地数据目录 |
+| Lite 单二进制 | `make build-lite` / `scripts/package-lite.sh` | PostgreSQL（pgvector） | 内存（无 Redis） | 个人 / 低资源环境 |
+| 桌面应用（**未正式发布**） | `cmd/desktop`（Wails v2）+ `scripts/package-mac-app.sh` | PostgreSQL（pgvector） | 内存 | 桌面单机使用，带图形界面 |
 
 ```mermaid
 flowchart TB
@@ -29,7 +29,7 @@ flowchart TB
     end
     subgraph lite["Lite / 桌面 (单进程)"]
         BIN["小炬人-lite 二进制 (内嵌 web/ 前端)"]
-        BIN --> SQLITE[("SQLite: FTS5 + sqlite-vec")]
+        BIN --> PG3[("postgres :5432 (pgvector)")]
         BIN --> MEMQ[("内存流管理")]
         BIN -. "可选" .-> DR3["docreader 127.0.0.1:50051"]
         BIN --> OLLAMA["Ollama :11434"]
@@ -40,7 +40,7 @@ flowchart TB
 
 - **标准 Docker 部署**：Docker 20.10+ 与 Docker Compose v2（v1 `docker-compose` 也兼容，`scripts/start_all.sh` 会自动探测）；建议 4 核 CPU / 8GB 内存起步（docreader 含 LibreOffice、Playwright，较吃内存），磁盘按知识库规模预留（Postgres 卷 + `/data/files` 文件卷）。启用 Milvus / OpenSearch / Langfuse 等可选组件需相应增加内存。
 - **模型服务**：本地推理需 [Ollama](https://ollama.com)（默认地址 `http://host.docker.internal:11434`，`OLLAMA_OPTIONAL=true` 时不可用仅告警不阻断）；或任意 OpenAI 兼容 API（DeepSeek、通义、智谱、硅基流动等）。上述 8GB 起步不含 Ollama 模型权重；Neo4j 默认关闭（需启用 `neo4j` profile）。
-- **源码编译**：Go 1.26（见 `docker/Dockerfile.app` builder 阶段 `golang:1.26-bookworm`）、CGO（依赖 `libsqlite3-dev`）、Node.js + npm（前端）、Python 3.10 + uv（docreader）。
+- **源码编译**：Go 1.26（见 `docker/Dockerfile.app` builder 阶段 `golang:1.26-bookworm`）、Node.js + npm（前端）、Python 3.10 + uv（docreader）。
 - **Kubernetes**：>= 1.25.0（`helm/Chart.yaml`）。
 
 Compose 默认 ParadeDB `v0.22.6-pg17` 的 x86 CPU 基线为 `x86-64-v2`（包括 SSE4.2、POPCNT），不再强制要求 AVX2。这不代表所有 ARM CPU 或其他可选服务均兼容。
@@ -223,12 +223,12 @@ helm install weknora ./helm -n weknora --create-namespace \
 
 桌面端面向本机与低资源环境，底层都是同一套 Lite 运行时（单进程 + SQLite + 内存队列），只是分发与启动方式不同：**单二进制**（命令行启动，也可作为后台服务）、**桌面应用**（图形界面，双击启动）。知识库与问答能力一致；免注册登录、本机沙箱与绑定本机项目目录只在桌面应用中提供。
 
-### Lite 运行时（零外部依赖） {#_7-1-lite-运行时-零外部依赖}
+### Lite 运行时（单进程） {#_7-1-lite-运行时-单进程}
 
-Lite 模式通过编译期 `EDITION=lite` 与运行期 `.env.lite` 环境实现「一进程跑全套」：
+Lite 模式通过编译期 `EDITION=lite` 与运行期 `.env.lite` 环境实现「应用单进程」：
 
-- **数据库**：`DB_DRIVER=sqlite` + `DB_PATH=./data/weknora.db`，编译加 `-tags "sqlite_fts5"`；
-- **检索**：`RETRIEVE_DRIVER=sqlite`，走 SQLite FTS5 全文检索 + sqlite-vec 向量检索，无需任何向量数据库；
+- **数据库**：`DB_DRIVER=postgres`，连一个 PostgreSQL(pgvector) 实例（`DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME`）。SQLite 已全面退场，Lite 也一样 —— 至少要有一个 PostgreSQL；
+- **检索**：`RETRIEVE_DRIVER=postgres`，复用应用自己的 pgvector 连接，无需额外的向量数据库服务；
 - **队列/流**：`STREAM_MANAGER_TYPE=memory`（`internal/stream/factory.go`），不需要 Redis，Asynq 分布式队列在 Lite 模式下为内存/no-op；
 - **前端**：`make build-lite` 会把 `frontend/dist` 复制为仓库根的 `web/`，二进制直接内嵌托管静态资源（`WEKNORA_WEB_DIR` 可指定目录，router 的 `serveFrontendStatic` 提供服务）；
 - **文档解析**：仍可选连本地 docreader（`DOCREADER_ADDR=127.0.0.1:50051`）；
@@ -244,14 +244,14 @@ make package-lite                   # 打包发行 tarball（scripts/package-lit
 
 ### 桌面应用（cmd/desktop，Wails v2） {#_7-2-桌面应用-cmd-desktop-wails-v2}
 
-桌面应用提供图形界面的本机使用方式：双击启动，进程内自带后端与 SQLite，数据落在系统的应用数据目录；另有端口设置、局域网绑定与更新检查等桌面特有能力。运行时能力与 [Lite 运行时（零外部依赖）](#_7-1-lite-运行时-零外部依赖) 相同。
+桌面应用提供图形界面的本机使用方式：双击启动，进程内自带后端，数据落在系统的应用数据目录；另有端口设置、局域网绑定与更新检查等桌面特有能力。运行时能力与 [Lite 运行时（单进程）](#_7-1-lite-运行时-单进程) 相同。
 
 ::: warning 尚未正式发布
 桌面应用目前**没有随 Release 提供安装包**，需要自己按下面的步骤构建。`release-lite.yml` 里已有跨平台（macOS universal/amd64/arm64、Linux amd64、Windows amd64）的构建任务，但该工作流的 tag 触发被注释掉、只能手动触发，且当前最新 Release 未附带任何产物。
 :::
 
 - 入口 `cmd/desktop/main.go` + `cmd/desktop/wails.json`；`cmd/desktop/app.go` 向前端暴露 `GetAPIBaseURL`（返回 `http://127.0.0.1:PORT/api/v1`）、HTTP 端口与「绑定到局域网」设置、`CheckForUpdates` 自动更新检查等绑定方法。
-- `scripts/package-mac-app.sh`：先构建前端到 `web/`，再 `wails build -tags "sqlite_fts5"`，最后组装 `.app` 包 —— `Contents/MacOS/小炬人 Lite` 为主程序，`Contents/Resources` 内嵌 `.env`、config、`migrations/sqlite`、web 前端；相对路径数据自动重定向到 `~/Library/Application Support/小炬人 Lite/data/`，日志写 `~/Library/Logs/小炬人 Lite/`。
+- `scripts/package-mac-app.sh`：先构建前端到 `web/`，再 `wails build`，最后组装 `.app` 包 —— `Contents/MacOS/小炬人 Lite` 为主程序，`Contents/Resources` 内嵌 `.env`、config、web 前端；相对路径数据自动重定向到 `~/Library/Application Support/小炬人 Lite/data/`，日志写 `~/Library/Logs/小炬人 Lite/`。
 
 ```bash
 make package-mac-app

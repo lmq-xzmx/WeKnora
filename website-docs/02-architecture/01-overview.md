@@ -38,7 +38,7 @@ WeKnora 采用"主服务 + 前端 + 文档解析微服务"的三进程核心架�
 
 除标准 Docker Compose 部署外，仓库还支持：
 
-- **Lite 模式**：`DB_DRIVER=sqlite`（内置 sqlite-vec 向量扩展）+ 不配置 `REDIS_ADDR`（Asynq 退化为进程内 `SyncTaskExecutor`），单二进制运行，前端静态资源内嵌（`handler.Edition == "lite"` 时由 Go 进程直接托管）；
+- **Lite 模式**：不配置 `REDIS_ADDR`（Asynq 退化为进程内 `SyncTaskExecutor`），应用单进程运行，前端静态资源内嵌（`handler.Edition == "lite"` 时由 Go 进程直接托管）；数据库仍是外部的 PostgreSQL(pgvector) —— SQLite 已全面退场；
 - **桌面版**：`cmd/desktop` 基于 Wails v2 打包为桌面应用，会话可在本机操作系统沙箱中执行（目前仅 macOS，基于 Seatbelt）；
 - **Kubernetes**：`helm/` Chart；**裸机**：`deploy/` systemd 单元。
 
@@ -48,7 +48,7 @@ WeKnora 采用"主服务 + 前端 + 文档解析微服务"的三进程核心架�
 | --- | --- | --- |
 | 后端语言 | Go | `go.mod` 声明 `go 1.26.0` |
 | Web 框架 | `github.com/gin-gonic/gin` | v1.12.0 |
-| ORM | `gorm.io/gorm` + postgres/sqlite driver | v1.31.1；SQLite 附带 `sqlite-vec` 向量扩展 |
+| ORM | `gorm.io/gorm` + postgres driver | v1.31.1 |
 | 依赖注入 | `go.uber.org/dig` | v1.19.0（构造函数注入，见后端设计篇） |
 | 异步任务 | `github.com/hibiken/asynq` | v0.26.0（基于 Redis，6 个 worker 池） |
 | 缓存/队列 | `github.com/redis/go-redis/v9` | v9.14.1 |
@@ -59,7 +59,7 @@ WeKnora 采用"主服务 + 前端 + 文档解析微服务"的三进程核心架�
 | 可观测 | OpenTelemetry + Langfuse（`internal/tracing/langfuse`） | LLM 调用级 trace |
 | gRPC | `google.golang.org/grpc` v1.81.0 | 调用 docreader |
 | LLM 接入 | 自研协议层 `internal/models/api`（OpenAI / Anthropic / Gemini / DashScope 等线格式各一个包）、Ollama、腾讯云 LKE SDK 等 | 27 家厂商由 `internal/models/providers` 声明，见[模型管理](../03-features/06-models.md) |
-| 向量/检索 | pgvector、ES v7/v8、OpenSearch、Qdrant、Milvus、Weaviate、Doris、腾讯 VectorDB、sqlite-vec | 由 `RETRIEVE_DRIVER` 与 `vector_stores` 表动态装配 |
+| 向量/检索 | pgvector、ES v7/v8、OpenSearch、Qdrant、Milvus、Weaviate、Doris、腾讯 VectorDB | 由 `RETRIEVE_DRIVER` 与 `vector_stores` 表动态装配 |
 | 知识图谱 | `neo4j-go-driver/v6` | 可选 |
 | 数据分析 | DuckDB（`duckdb-go/v2`）、`pg_query_go` SQL 校验 | Agent 数据分析工具 |
 | 协程池 | `panjf2000/ants/v2` | 文档处理并发池（`CONCURRENCY_POOL_SIZE`） |
@@ -191,7 +191,7 @@ sequenceDiagram
 | `client/` | Go SDK：以 HTTP 客户端形式封装 WeKnora API，供二次开发集成 |
 | `mcp-server/` | Python 实现的 MCP Server（`weknora_mcp_server.py`），把 WeKnora API 暴露为 MCP 工具给 Claude 等 MCP 客户端 |
 | `miniprogram/` | 微信小程序客户端（WXML/WXSS/JS） |
-| `migrations/` | golang-migrate 数据库迁移：`versioned/`（Postgres 主线 `NNNNNN_*.up/down.sql`）、`sqlite/`（Lite 模式）、`paradedb/`、`mysql/` |
+| `migrations/` | golang-migrate 数据库迁移：`versioned/`（Postgres 主线 `NNNNNN_*.up/down.sql`）、`paradedb/`、`mysql/` |
 | `config/` | 运行配置：`config.yaml` 主配置、`builtin_agents.yaml` 内置 Agent、`agent_type_presets.yaml` Agent 预设、`builtin_models.yaml.example` 声明式内置模型、`models.json.example` 模型厂商目录叠加、`prompt_templates/` 提示词模板 |
 | `docker/` | 各镜像 Dockerfile（app/docreader/sandbox/odl-hybrid）与 searxng 配置 |
 | `deploy/` | 裸机部署资源（systemd 服务单元等） |

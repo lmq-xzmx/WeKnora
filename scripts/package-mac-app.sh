@@ -66,7 +66,8 @@ eval "$(./scripts/get_version.sh env)"
 LDFLAGS="$(./scripts/get_version.sh ldflags) -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"
 
 # 默认生成 Wails 绑定（供 window.go.main.App.* 等）；若加 -skipbindings 则需在 OnDomReady 注入 __WEKNORA_API_BASE__
-(cd cmd/desktop && wails build -clean -tags "sqlite_fts5" -ldflags="$LDFLAGS" -o "${APP_NAME}")
+# 不再需要 sqlite_fts5 build tag —— sqlite 已全面退场，检索走 PostgreSQL(pgvector)。
+(cd cmd/desktop && wails build -clean -ldflags="$LDFLAGS" -o "${APP_NAME}")
 
 # ── Step 3: Copy generated .app to dist ──
 echo ">> Assembling package..."
@@ -77,14 +78,10 @@ cp -R "cmd/desktop/build/bin/${APP_BUNDLE}" "dist/"
 # 将配置文件和初始数据库迁移脚本塞进 .app 内部资源里
 RESOURCES_DIR="${DIST_DIR}/Contents/Resources"
 mkdir -p "${RESOURCES_DIR}/config"
-mkdir -p "${RESOURCES_DIR}/migrations/sqlite"
 bash ./scripts/copy-licenses.sh "${RESOURCES_DIR}"
 
 if [ -f .env.lite.example ]; then
     cp .env.lite.example "${RESOURCES_DIR}/.env"
-fi
-if [ -d migrations/sqlite ]; then
-    cp -r migrations/sqlite/* "${RESOURCES_DIR}/migrations/sqlite/"
 fi
 if [ -d config ]; then
     cp -r config/* "${RESOURCES_DIR}/config/"

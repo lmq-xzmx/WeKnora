@@ -59,7 +59,9 @@ export CGO_CFLAGS="-Wno-deprecated-declarations"
 if [ "$(uname)" = "Darwin" ]; then
     export CGO_LDFLAGS="-Wl,-no_warn_duplicate_libraries"
 fi
-CGO_ENABLED=1 go build -tags "sqlite_fts5" -ldflags="${LDFLAGS}" \
+# 不再需要 sqlite_fts5 build tag —— sqlite 已全面退场，
+# 检索走 PostgreSQL(pgvector)。
+CGO_ENABLED=1 go build -ldflags="${LDFLAGS}" \
     -o WeKnora-lite ./cmd/server
 
 # ── Step 3: Assemble package ──
@@ -76,10 +78,6 @@ cp .env.lite.example "${DIST_DIR}/"
 cp docs/LITE.md "${DIST_DIR}/README.md"
 if [ -d config ]; then
     cp -r config "${DIST_DIR}/config"
-fi
-if [ -d migrations/sqlite ]; then
-    mkdir -p "${DIST_DIR}/migrations/sqlite"
-    cp -r migrations/sqlite/* "${DIST_DIR}/migrations/sqlite/"
 fi
 if [ -f deploy/weknora-lite.service ]; then
     cp deploy/weknora-lite.service "${DIST_DIR}/"

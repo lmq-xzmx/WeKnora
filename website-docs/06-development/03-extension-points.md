@@ -248,7 +248,7 @@ const (
     MilvusRetrieverEngineType          RetrieverEngineType = "milvus"
     WeaviateRetrieverEngineType        RetrieverEngineType = "weaviate"
     DorisRetrieverEngineType           RetrieverEngineType = "doris"
-    SQLiteRetrieverEngineType          RetrieverEngineType = "sqlite"
+    // SQLiteRetrieverEngineType 已随 SQLite 退场一并移除。
     TencentVectorDBRetrieverEngineType RetrieverEngineType = "tencent_vectordb"
     OpenSearchRetrieverEngineType      RetrieverEngineType = "opensearch"
 )
@@ -256,12 +256,12 @@ const (
 
 ### 现有实现
 
-均在 `internal/application/repository/retriever/` 下：`postgres/`（pgvector + BM25/ParadeDB）、`elasticsearch/v7/`、`elasticsearch/v8/`、`qdrant/`、`milvus/`、`weaviate/`、`doris/`、`sqlite/`（sqlite-vec + FTS5）、`tencentvectordb/`、`opensearch/`。
+均在 `internal/application/repository/retriever/` 下：`postgres/`（pgvector + BM25/ParadeDB）、`elasticsearch/v7/`、`elasticsearch/v8/`、`qdrant/`、`milvus/`、`weaviate/`、`doris/`、`tencentvectordb/`、`opensearch/`。
 
 ### 新增步骤
 
 1. 在 `internal/types/retriever.go` 增加 `RetrieverEngineType` 常量；
-2. 在 `internal/application/repository/retriever/myengine/` 新建包，实现 `RetrieveEngineRepository` 接口（可参考 `qdrant/` 或 `sqlite/`）；
+2. 在 `internal/application/repository/retriever/myengine/` 新建包，实现 `RetrieveEngineRepository` 接口（可参考 `qdrant/` 或 `postgres/`）；
 3. **注册点：`internal/container/container.go` 的 `initRetrieveEngineRegistry()`** — 按 `RETRIEVE_DRIVER` 环境变量（逗号分隔）条件注册：
 
 ```go
