@@ -1,0 +1,9 @@
+# Docling 解析引擎离线模型清单
+# 分发位置：两台生产机 /data/WeKnora/docling-models/（odl-hybrid 挂载为 /models）
+# 更新方式：Mac 上重新组装 odl-docling-models/ 后 tar 分发（见部署文档），分发后更新本文件日期
+layout:            docling-project/docling-layout-heron@main        (164MB, 版面分析)
+tableformer-accurate: docling-project/docling-models@2199320        (203MB, 表格精准)
+tableformer-fast:     docling-project/docling-models@2199320        (139MB, 表格快速)
+ocr-detection:      EasyOCR craft_mlt_25k                            (80MB,  多语言检测)
+ocr-recognition:    EasyOCR zh_sim_g2 + latin_g2                     (21+15MB, 中文+英文)
+updated: 2026-10-29
