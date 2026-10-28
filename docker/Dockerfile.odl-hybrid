@@ -39,7 +39,8 @@ RUN apt-get update \
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
         -i https://mirrors.aliyun.com/pypi/simple/ \
-    && /opt/venv/bin/pip install --no-cache-dir "opendataloader-pdf[hybrid]>=2.4.7" \
+    && /opt/venv/bin/pip install --no-cache-dir "opendataloader-pdf>=2.4.7" \
+        # 运行时默认 --no-ocr，不需要 [hybrid] extra（它会拖入 easyocr→torch→nvidia-cudnn 近 1GB） \
         -i https://mirrors.aliyun.com/pypi/simple/
 
 
@@ -75,4 +76,4 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=120s \
 
 # Use exec form so signals (SIGTERM) propagate to the python process — the
 # bash -c wrapper would swallow them and break graceful shutdown.
-CMD ["sh", "-c", "exec opendataloader-pdf-hybrid --host 0.0.0.0 --port 5002 ${ODL_HYBRID_EXTRA_ARGS}"]
+CMD ["sh", "-c", "exec opendataloader-pdf --host 0.0.0.0 --port 5002 ${ODL_HYBRID_EXTRA_ARGS}"]
