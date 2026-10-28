@@ -1,0 +1,63 @@
+# WeKnora CI/CD —— Woodpecker 3.x（2026-10-28 实测跑通的模式）
+#
+# 构建机：生产 ECS（zhao-yun-ecs-88166038，x86_64 + 可用镜像加速器）
+# 镜像仓库：内网 registry 100.108.142.49:5000（HTTP/insecure，各机 insecure-registries 已配）
+# 部署方式：生产机 docker compose pull && up -d（只拉不构建）
+#
+# 铁律：Mac（arm64）不构建生产镜像；本流水线产出的必须是 linux/amd64。
+#
+# 实现说明：不用 plugins/docker 插件（YAML 挂 docker.sock 需要仓库 trusted），
+#           改用 docker CLI 直构——socket 由 agent 的
+#           WOODPECKER_BACKEND_DOCKER_VOLUMES 注入每个步骤容器，
+#           ECS daemon 已把内网 registry 列入 insecure-registries，push 可直推。
+# 前提：docker:cli、golang:1.21-alpine 的 amd64 版已在内网 registry。
+
+when:
+  - event: push
+    branch: main
+  - event: tag
+
+steps:
+  # 平台自检：构建必须发生在 x86_64 上，否则产物给 Linux 生产用不了
+  platform-check:
+    image: 100.108.142.49:5000/golang:1.21-alpine
+    commands:
+      - uname -m
+      - test "$(uname -m)" = "x86_64" || (echo "构建机不是 x86_64，中止" && exit 1)
+
+  # 后端镜像（多阶段构建在 Dockerfile 内部完成 Go + Node + Rust）
+  build-app:
+    image: 100.108.142.49:5000/docker:cli
+    environment:
+      - GOPROXY_ARG=https://goproxy.cn,direct
+      - APK_MIRROR_ARG=https://mirrors.aliyun.com/debian
+    commands:
+      - docker build --build-arg GOPROXY_ARG=$${GOPROXY_ARG} --build-arg APK_MIRROR_ARG=$${APK_MIRROR_ARG}
+        -t 100.108.142.49:5000/wechatopenai/weknora-app:${CI_COMMIT_SHA}
+        -t 100.108.142.49:5000/wechatopenai/weknora-app:latest
+        -f docker/Dockerfile.app .
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-app:${CI_COMMIT_SHA}
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-app:latest
+
+  # 前端镜像
+  build-ui:
+    image: 100.108.142.49:5000/docker:cli
+    commands:
+      - docker build -t 100.108.142.49:5000/wechatopenai/weknora-ui:${CI_COMMIT_SHA}
+        -t 100.108.142.49:5000/wechatopenai/weknora-ui:latest frontend/
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-ui:${CI_COMMIT_SHA}
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-ui:latest
+
+  # 文档解析服务镜像（仅相关目录变更时构建）
+  build-docreader:
+    image: 100.108.142.49:5000/docker:cli
+    commands:
+      - docker build -t 100.108.142.49:5000/wechatopenai/weknora-docreader:${CI_COMMIT_SHA}
+        -t 100.108.142.49:5000/wechatopenai/weknora-docreader:latest
+        -f docker/Dockerfile.docreader .
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-docreader:${CI_COMMIT_SHA}
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-docreader:latest
+    when:
+      - path:
+          - docreader/**
+          - docker/Dockerfile.docreader
