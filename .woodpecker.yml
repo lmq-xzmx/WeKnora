@@ -24,8 +24,8 @@ steps:
   build-app:
     image: 100.108.142.49:5000/docker:cli
     environment:
-      - GOPROXY_ARG=https://goproxy.cn,direct
-      - APK_MIRROR_ARG=https://mirrors.aliyun.com/debian
+      GOPROXY_ARG: https://goproxy.cn,direct
+      APK_MIRROR_ARG: https://mirrors.aliyun.com/debian
     commands:
       - docker build --build-arg GOPROXY_ARG=$${GOPROXY_ARG} --build-arg APK_MIRROR_ARG=$${APK_MIRROR_ARG} -t 100.108.142.49:5000/wechatopenai/weknora-app:${CI_COMMIT_SHA} -t 100.108.142.49:5000/wechatopenai/weknora-app:latest -f docker/Dockerfile.app .
       - docker push 100.108.142.49:5000/wechatopenai/weknora-app:${CI_COMMIT_SHA}
