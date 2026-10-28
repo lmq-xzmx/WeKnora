@@ -136,10 +136,16 @@ func (c *Client) Notify(ctx context.Context, event EventType, entity EntityType,
 		req.Header.Set("Authorization", "Bearer "+c.cfg.Token)
 	}
 
-	// Sign with HMAC-SHA256 if secret is configured
+	// Sign with HMAC-SHA256 if secret is configured.
+	//
+	// 头名与格式对齐 geo-platform/contracts/webhook-signing 统一规范：
+	// `X-Webhook-Signature: sha256=<lowercase-hex>`。
+	//
+	// 之前用的是 `X-Webhook-Secret` + 裸 hex —— 与三系统互调、平台回调
+	// 不是同一套约定，运维排错时得记两种格式。GEO-K 侧验签已同时认两种
+	//（新格式优先，旧格式作过渡窗口），所以这里切过来不会断链路。
 	if c.cfg.WebhookSecret != "" {
-		sig := hmacSHA256(body, c.cfg.WebhookSecret)
-		req.Header.Set("X-Webhook-Secret", sig)
+		req.Header.Set("X-Webhook-Signature", "sha256="+hmacSHA256(body, c.cfg.WebhookSecret))
 	}
 
 	// 重试：网络抖动或 GEO-K 短暂不可用时，单次失败会永久丢事件。

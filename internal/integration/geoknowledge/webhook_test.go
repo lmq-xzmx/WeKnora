@@ -37,7 +37,7 @@ func TestNotifySuccess(t *testing.T) {
 	var gotAuth, gotSecret string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		gotSecret = r.Header.Get("X-Webhook-Secret")
+		gotSecret = r.Header.Get("X-Webhook-Signature")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -55,7 +55,7 @@ func TestNotifySuccess(t *testing.T) {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer secret-token")
 	}
 	if gotSecret == "" {
-		t.Error("X-Webhook-Secret header missing")
+		t.Error("X-Webhook-Signature header missing")
 	}
 }
 
@@ -106,7 +106,7 @@ func TestNotifySignatureMatchesBody(t *testing.T) {
 	var gotSecret string
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotSecret = r.Header.Get("X-Webhook-Secret")
+		gotSecret = r.Header.Get("X-Webhook-Signature")
 		gotBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -123,8 +123,8 @@ func TestNotifySignatureMatchesBody(t *testing.T) {
 	if len(gotBody) == 0 {
 		t.Fatal("服务端没收到 body")
 	}
-	if want := hmacSHA256(gotBody, secret); gotSecret != want {
-		t.Errorf("X-Webhook-Secret = %q，期望 %q（body=%s）", gotSecret, want, gotBody)
+	if want := "sha256=" + hmacSHA256(gotBody, secret); gotSecret != want {
+		t.Errorf("X-Webhook-Signature = %q，期望 %q（body=%s）", gotSecret, want, gotBody)
 	}
 }
 
@@ -140,7 +140,7 @@ func TestNotifySignatureOverRawBody(t *testing.T) {
 	var gotSecret string
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotSecret = r.Header.Get("X-Webhook-Secret")
+		gotSecret = r.Header.Get("X-Webhook-Signature")
 		gotBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -156,8 +156,8 @@ func TestNotifySignatureOverRawBody(t *testing.T) {
 	if err := c.Notify(context.Background(), EventCreated, EntityKnowledge, "kn-1", "t", content, "", "", "", nil); err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
-	if want := hmacSHA256(gotBody, secret); gotSecret != want {
-		t.Errorf("X-Webhook-Secret = %q，期望 %q（body=%s）", gotSecret, want, gotBody)
+	if want := "sha256=" + hmacSHA256(gotBody, secret); gotSecret != want {
+		t.Errorf("X-Webhook-Signature = %q，期望 %q（body=%s）", gotSecret, want, gotBody)
 	}
 }
 
@@ -169,7 +169,7 @@ func TestNotifySignatureOverRawBody(t *testing.T) {
 func TestNotifyNoSecretNoHeader(t *testing.T) {
 	var headerPresent bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, headerPresent = r.Header["X-Webhook-Secret"]
+		_, headerPresent = r.Header["X-Webhook-Signature"]
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -182,7 +182,7 @@ func TestNotifyNoSecretNoHeader(t *testing.T) {
 		t.Fatalf("Notify: %v", err)
 	}
 	if headerPresent {
-		t.Error("未配置 secret 时不应发送 X-Webhook-Secret 头")
+		t.Error("未配置 secret 时不应发送 X-Webhook-Signature 头")
 	}
 }
 
