@@ -27,22 +27,22 @@ steps:
       GOPROXY_ARG: https://goproxy.cn,direct
       APK_MIRROR_ARG: mirrors.aliyun.com
     commands:
-      - docker build --build-arg GOPROXY_ARG=$${GOPROXY_ARG} --build-arg APK_MIRROR_ARG=$${APK_MIRROR_ARG} -t 100.108.142.49:5000/wechatopenai/weknora-app:${CI_COMMIT_SHA} -t 100.108.142.49:5000/wechatopenai/weknora-app:latest -f docker/Dockerfile.app .
-      - docker push 100.108.142.49:5000/wechatopenai/weknora-app:${CI_COMMIT_SHA}
+      - docker build --build-arg GOPROXY_ARG=$${GOPROXY_ARG} --build-arg APK_MIRROR_ARG=$${APK_MIRROR_ARG} -t 100.108.142.49:5000/wechatopenai/weknora-app:${CI_COMMIT_SHORT} -t 100.108.142.49:5000/wechatopenai/weknora-app:latest -f docker/Dockerfile.app .
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-app:${CI_COMMIT_SHORT}
       - docker push 100.108.142.49:5000/wechatopenai/weknora-app:latest
 
   build-ui:
     image: 100.108.142.49:5000/docker:cli
     commands:
-      - docker build -t 100.108.142.49:5000/wechatopenai/weknora-ui:${CI_COMMIT_SHA} -t 100.108.142.49:5000/wechatopenai/weknora-ui:latest frontend/
-      - docker push 100.108.142.49:5000/wechatopenai/weknora-ui:${CI_COMMIT_SHA}
+      - docker build -t 100.108.142.49:5000/wechatopenai/weknora-ui:${CI_COMMIT_SHORT} -t 100.108.142.49:5000/wechatopenai/weknora-ui:latest frontend/
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-ui:${CI_COMMIT_SHORT}
       - docker push 100.108.142.49:5000/wechatopenai/weknora-ui:latest
 
   build-docreader:
     image: 100.108.142.49:5000/docker:cli
     commands:
-      - docker build -t 100.108.142.49:5000/wechatopenai/weknora-docreader:${CI_COMMIT_SHA} -t 100.108.142.49:5000/wechatopenai/weknora-docreader:latest -f docker/Dockerfile.docreader .
-      - docker push 100.108.142.49:5000/wechatopenai/weknora-docreader:${CI_COMMIT_SHA}
+      - docker build -t 100.108.142.49:5000/wechatopenai/weknora-docreader:${CI_COMMIT_SHORT} -t 100.108.142.49:5000/wechatopenai/weknora-docreader:latest -f docker/Dockerfile.docreader .
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-docreader:${CI_COMMIT_SHORT}
       - docker push 100.108.142.49:5000/wechatopenai/weknora-docreader:latest
     when:
       - path:
@@ -53,8 +53,8 @@ steps:
   build-sandbox:
     image: 100.108.142.49:5000/docker:cli
     commands:
-      - docker build -t 100.108.142.49:5000/wechatopenai/weknora-sandbox:${CI_COMMIT_SHA} -t 100.108.142.49:5000/wechatopenai/weknora-sandbox:latest -f docker/Dockerfile.sandbox .
-      - docker push 100.108.142.49:5000/wechatopenai/weknora-sandbox:${CI_COMMIT_SHA}
+      - docker build -t 100.108.142.49:5000/wechatopenai/weknora-sandbox:${CI_COMMIT_SHORT} -t 100.108.142.49:5000/wechatopenai/weknora-sandbox:latest -f docker/Dockerfile.sandbox .
+      - docker push 100.108.142.49:5000/wechatopenai/weknora-sandbox:${CI_COMMIT_SHORT}
       - docker push 100.108.142.49:5000/wechatopenai/weknora-sandbox:latest
     when:
       - path:
@@ -65,8 +65,8 @@ steps:
   build-mcp:
     image: 100.108.142.49:5000/docker:cli
     commands:
-      - docker build -t 100.108.142.49:5000/weknora-mcp:${CI_COMMIT_SHA} -t 100.108.142.49:5000/weknora-mcp:latest mcp-server/
-      - docker push 100.108.142.49:5000/weknora-mcp:${CI_COMMIT_SHA}
+      - docker build -t 100.108.142.49:5000/weknora-mcp:${CI_COMMIT_SHORT} -t 100.108.142.49:5000/weknora-mcp:latest mcp-server/
+      - docker push 100.108.142.49:5000/weknora-mcp:${CI_COMMIT_SHORT}
       - docker push 100.108.142.49:5000/weknora-mcp:latest
     when:
       - path:
@@ -75,8 +75,8 @@ steps:
   build-odl-hybrid:
     image: 100.108.142.49:5000/docker:cli
     commands:
-      - docker build -t 100.108.142.49:5000/weknora-odl-hybrid:${CI_COMMIT_SHA} -t 100.108.142.49:5000/weknora-odl-hybrid:latest -f docker/Dockerfile.odl-hybrid .
-      - docker push 100.108.142.49:5000/weknora-odl-hybrid:${CI_COMMIT_SHA}
+      - docker build -t 100.108.142.49:5000/weknora-odl-hybrid:${CI_COMMIT_SHORT} -t 100.108.142.49:5000/weknora-odl-hybrid:latest -f docker/Dockerfile.odl-hybrid .
+      - docker push 100.108.142.49:5000/weknora-odl-hybrid:${CI_COMMIT_SHORT}
       - docker push 100.108.142.49:5000/weknora-odl-hybrid:latest
     when:
       - path:
@@ -90,6 +90,18 @@ steps:
     commands:
       - apk add --no-cache openssh-client
       - ssh -o StrictHostKeyChecking=accept-new -i /root/.ssh/deploy_ed25519 root@100.102.197.48 "cd /data/WeKnora && docker-compose pull && docker-compose up -d"
+    when:
+      - event: push
+        branch: main
+
+  # ── Registry 清理：防止 CI 旧版本镜像在 NAS 无限堆积 ──────
+  # 逻辑在 scripts/ci-registry-cleanup.sh 里（含 digest 校验，
+  # 确保不会连带删掉生产正在用的 latest）。此处只负责调用。
+  cleanup-registry:
+    image: 100.108.142.49:5000/alpine:3.20
+    commands:
+      - apk add --no-cache curl
+      - sh scripts/ci-registry-cleanup.sh
     when:
       - event: push
         branch: main
