@@ -18,7 +18,9 @@ set -e
 
 REG=${REG:-100.108.142.49:5000}
 TAG=${TAG:-${CI_COMMIT_SHA}}
-REPOS="wechatopenai/weknora-app wechatopenai/weknora-ui wechatopenai/weknora-docreader wechatopenai/weknora-sandbox weknora-mcp weknora-odl-hybrid"
+# ⚠️ 不含 weknora-odl-hybrid：它现在由生产端推送维护（registry 的 :local 就是
+#    生产在跑的那份），CI 发布时既不复用也不覆盖它，免得把 :local 换成旧镜像。
+REPOS="wechatopenai/weknora-app wechatopenai/weknora-ui wechatopenai/weknora-docreader wechatopenai/weknora-sandbox weknora-mcp"
 ACC='Accept: application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json'
 
 # registry 里有没有这个 tag 的清单
@@ -38,11 +40,6 @@ for repo in $REPOS; do
     docker pull "$REG/$repo:$TAG"
     docker tag "$REG/$repo:$TAG" "$REG/$repo:latest"
     docker push "$REG/$repo:latest"
-    # weknora-odl-hybrid：生产 compose 用的是 :local，latest 之外还要同步 local
-    if [ "$repo" = "weknora-odl-hybrid" ]; then
-      docker tag "$REG/$repo:$TAG" "$REG/$repo:local"
-      docker push "$REG/$repo:local"
-    fi
     REUSED="$REUSED $repo"
   else
     echo "--- $repo:$TAG 不存在"

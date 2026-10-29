@@ -176,10 +176,12 @@ RUN apt-get update && \
 # CDN (releases.astral.sh), which is unreliable on some networks; when it
 # fails we fall back to installing uv from PyPI (optionally via a mirror).
 RUN mkdir -p /home/appuser/.local/bin && \
-    (curl -LsSf --retry 3 --retry-delay 2 --max-time 60 https://astral.sh/uv/install.sh | \
-        CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh \
-        || python3 -m pip install --break-system-packages \
-            ${UV_INDEX_URL_ARG:+--index-url=$UV_INDEX_URL_ARG} uv) && \
+    ( timeout 120 curl -LsSf --retry 3 --retry-delay 2 https://astral.sh/uv/install.sh -o /tmp/uv-install.sh \
+      && CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh /tmp/uv-install.sh \
+    ) || \
+    ( python3 -m pip install --break-system-packages \
+        ${UV_INDEX_URL_ARG:+--index-url=$UV_INDEX_URL_ARG} uv \
+      && ln -sf /home/appuser/.local/bin/uv /home/appuser/.local/bin/uvx ) ; \
     if [ -x /home/appuser/.local/bin/uvx ]; then \
         ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx; \
     else \

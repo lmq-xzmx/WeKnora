@@ -215,10 +215,16 @@ elif want weknora-mcp; then
   echo "--- 跳过 weknora-mcp（本次未变更相关文件）"
 fi
 
-if want weknora-odl-hybrid && changed_file "docker/Dockerfile.odl-hybrid"; then
-  build_odl_hybrid
-elif want weknora-odl-hybrid; then
-  echo "--- 跳过 weknora-odl-hybrid（本次未变更相关文件）"
+# ⚠️ weknora-odl-hybrid 故意**不自动构建**：
+#    registry 里的 :local（6.8GB 完整版，带 OCR 依赖）就是生产机正在跑的那一份
+#    （digest 完全一致），CI 再构建一遍既慢（要下 torch/cudnn）又可能覆盖成
+#    一个和线上不一致的镜像。以后要更新 :local，从生产机推一份上去即可：
+#      docker push 100.108.142.49:5000/weknora-odl-hybrid:local
+#    需要自建时手动跑：sh scripts/ci-build.sh（把 want 的判断去掉）
+if [ "${BUILD_ODL_HYBRID:-0}" = "1" ]; then
+  if want weknora-odl-hybrid; then build_odl_hybrid; fi
+else
+  echo "--- 跳过 weknora-odl-hybrid（registry 的 :local 由生产端推送维护，CI 不自动构建）"
 fi
 
 echo ""
