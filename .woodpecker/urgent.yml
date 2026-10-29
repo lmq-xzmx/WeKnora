@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────
+# 紧急发布 —— 生产 ECS 上直接构建并部署
+#
+# 触发方式：打 tag（git tag v1.2.3 && git push gitea v1.2.3）
+#   日常推送 main 走 build.yml，在 NAS 上慢慢构建（不占生产机硬盘）
+#   紧急发布走这里，构建与部署都在生产 ECS 上跑，几分钟出镜像
+#
+# 构建与部署逻辑与 build.yml / deploy.yml 共用同一份脚本，产物一致。
+# ─────────────────────────────────────────────────────────────
+name: urgent
+when:
+  - event: tag
+labels:
+  platform: nas
+  builder: ecs
+steps:
+  # ── 平台自检 ──────────────────────────────────────────
+  platform-check:
+    image: 100.108.142.49:5000/golang:1.21-alpine
+    commands:
+      - uname -m
+      - test "$(uname -m)" = "x86_64" || (echo "构建机不是 x86_64，中止" && exit 1)
+
+  # ── 构建并推送镜像 ────────────────────────────────────
+  build:
+    image: 100.108.142.49:5000/docker:cli
+    environment:
+      GOPROXY_ARG: https://goproxy.cn,direct
+      APK_MIRROR_ARG: mirrors.aliyun.com
+    commands:
+      - sh scripts/ci-build.sh
+
+  # ── 滚动更新生产机 ────────────────────────────────────
+  deploy:
+    image: 100.108.142.49:5000/golang:1.21-alpine
+    commands:
+      - apk add --no-cache openssh-client
+      - sh scripts/ci-deploy.sh
+
+  # ── Registry 清理 ─────────────────────────────────────
+  cleanup-registry:
+    image: 100.108.142.49:5000/alpine:3.20
+    commands:
+      - apk add --no-cache curl
+      - sh scripts/ci-registry-cleanup.sh
