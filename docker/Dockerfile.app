@@ -176,12 +176,15 @@ RUN apt-get update && \
 # CDN (releases.astral.sh), which is unreliable on some networks; when it
 # fails we fall back to installing uv from PyPI (optionally via a mirror).
 RUN mkdir -p /home/appuser/.local/bin && \
-    ( timeout 120 curl -LsSf --retry 3 --retry-delay 2 https://astral.sh/uv/install.sh -o /tmp/uv-install.sh \
-      && CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh /tmp/uv-install.sh \
-    ) || \
-    ( python3 -m pip install --break-system-packages \
-        ${UV_INDEX_URL_ARG:+--index-url=$UV_INDEX_URL_ARG} uv \
-      && ln -sf /home/appuser/.local/bin/uv /home/appuser/.local/bin/uvx ) ; \
+    ( if [ -n "$UV_INDEX_URL_ARG" ]; then \
+        # 有 pypi 镜像就直接走 pip：官方安装器要访问 releases.astral.sh，
+        # 那个地址从国内机器上不可达（实测会一直挂着，内层下载还没超时）
+        python3 -m pip install --break-system-packages --index-url="$UV_INDEX_URL_ARG" uv \
+        && ln -sf /home/appuser/.local/bin/uv /home/appuser/.local/bin/uvx ; \
+      else \
+        timeout 120 curl -LsSf --retry 3 --retry-delay 2 https://astral.sh/uv/install.sh -o /tmp/uv-install.sh \
+        && CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh /tmp/uv-install.sh ; \
+      fi ) ; \
     if [ -x /home/appuser/.local/bin/uvx ]; then \
         ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx; \
     else \

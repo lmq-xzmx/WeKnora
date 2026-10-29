@@ -59,6 +59,9 @@ fix-docker.sh
 # WeChat Mini Program local/private configuration
 miniprogram/project.private.config.json
 
+# Docling 离线模型（从生产机分发过来的，1.8GB，不入库）
+odl-docling-models/
+
 # Staging dir for the Docker sandbox self-check probe (removed after each run)
 .weknora-sandbox-check-*
 

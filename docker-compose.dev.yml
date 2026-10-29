@@ -343,6 +343,12 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.odl-hybrid
+      args:
+        # 直连官方源在国内很慢（NAS 实测 deb.debian.org 25KB/s），走国内镜像
+        APT_MIRROR: ${APT_MIRROR:-mirrors.ustc.edu.cn}
+        # 开发机是 arm64，torch/CUDA 那套（6.4GB）用不上 → 不带 OCR 依赖。
+        # 需要扫描件 OCR 时改回 1（镜像会大很多）。
+        WITH_OCR: ${ODL_WITH_OCR:-0}
     image: weknora-odl-hybrid:local
     container_name: 小炬人-odl-hybrid
     profiles:
@@ -350,9 +356,16 @@ services:
     ports:
       - "${ODL_HYBRID_PORT:-5002}:5002"
     environment:
-      # Default --no-ocr (digital PDFs). Scanned PDFs: use builtin OCR / MinerU, or
-      # ODL_HYBRID_EXTRA_ARGS="--force-ocr" (needs EasyOCR + libGL in image).
+      # 开发机镜像不带 OCR 依赖（WITH_OCR=0），所以只能用 --no-ocr。
+      # 扫描件 OCR 在开发机上走 WeKnora 内置 docreader / MinerU 兜底。
       - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---no-ocr}
+      # 离线模型（从生产机分发过来的同一份，见 deploy/docling-models.VERSION）
+      - DOCLING_ARTIFACTS_PATH=/models
+      - HF_HUB_CACHE=/models/hub
+      - HF_HUB_OFFLINE=1
+    volumes:
+      - ./odl-docling-models:/models:ro
+      - ./odl-docling-models/EasyOcr:/models/EasyOcr
     networks:
       - 小炬人-network-dev
     restart: unless-stopped
