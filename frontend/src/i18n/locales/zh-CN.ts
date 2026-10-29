@@ -1852,6 +1852,13 @@ export default {
   kbSettings: {
     parser: {
       title: '解析引擎',
+      doclingModelsTitle: 'Docling 离线模型',
+      doclingModelsReady: '全部就绪',
+      doclingModelsMissing: '部分缺失',
+      doclingModelsCategory: '用途',
+      doclingModelsSize: '大小',
+      doclingModelsUpdated: '清单更新于',
+      doclingModelsMissingHint: '部分模型缺失，请按 deploy/docling-models.VERSION 分发',
       description: '为不同文件类型选择文档解析引擎。未配置的文件类型将使用内置解析引擎。',
       loading: '加载中...',
       noEngineAvailable: '暂无可用解析引擎，或文档解析服务未配置。',

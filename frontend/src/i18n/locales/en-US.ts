@@ -493,6 +493,13 @@ export default {
         },
         parser: {
           title: 'Parser engine (optional)',
+          doclingModelsTitle: 'Docling offline models',
+          doclingModelsReady: 'All ready',
+          doclingModelsMissing: 'Some missing',
+          doclingModelsCategory: 'Category',
+          doclingModelsSize: 'Size',
+          doclingModelsUpdated: 'Manifest updated',
+          doclingModelsMissingHint: 'Some models missing; distribute per deploy/docling-models.VERSION',
           desc: 'How PDFs and Office files are parsed. Defaults work for most cases; adjust if you need OCR or special layouts.'
         },
         chunking: {

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"os"
 	"regexp"
 	"strconv"
@@ -421,6 +422,65 @@ func (h *SystemHandler) ListParserEngines(c *gin.Context) {
 	remoteEngines := h.fetchRemoteEngines(c.Request.Context(), reader, overrides)
 	engines := docparser.ListAllEngines(connected, overrides, remoteEngines)
 	c.JSON(200, gin.H{"code": 0, "msg": "success", "data": engines, "docreader_addr": docreaderAddr, "docreader_transport": docreaderTransport, "connected": connected})
+}
+
+// GetDoclingModelsInfo 返回 Docling 解析引擎（odl-hybrid）的离线模型清单。
+// 模型目录在生产部署中以只读方式挂载进 app 容器（compose: ./docling-models:/models:ro），
+// 清单文件 VERSION 随目录一起分发。目录不可用时 available=false，前端展示“部分缺失/未分发”。
+// @Summary      查询 Docling 离线模型清单
+// @Tags         系统
+// @Produce      json
+// @Success      200  {object}  object{code=int,msg=string,data=object}
+// @Router       /system/parser-engines/docling-models [get]
+func (h *SystemHandler) GetDoclingModelsInfo(c *gin.Context) {
+	dir := os.Getenv("DOCLING_MODELS_DIR")
+	if dir == "" {
+		dir = "/models"
+	}
+
+	type modelItem struct {
+		Name     string `json:"name"`
+		Category string `json:"category"`
+		Path     string `json:"path"`
+		SizeMB   int64  `json:"size_mb"`
+		Present  bool   `json:"present"`
+	}
+	specs := []modelItem{
+		{Name: "docling-layout-heron", Category: "版面分析", Path: "docling-project--docling-layout-heron/model.safetensors"},
+		{Name: "tableformer-accurate", Category: "表格识别", Path: "model_artifacts/tableformer/accurate/tableformer_accurate.safetensors"},
+		{Name: "tableformer-fast", Category: "表格识别", Path: "model_artifacts/tableformer/fast/tableformer_fast.safetensors"},
+		{Name: "easyocr-craft_mlt_25k", Category: "OCR 检测", Path: "EasyOcr/craft_mlt_25k.pth"},
+		{Name: "easyocr-zh_sim_g2", Category: "OCR 识别(中文)", Path: "EasyOcr/zh_sim_g2.pth"},
+		{Name: "easyocr-latin_g2", Category: "OCR 识别(英文)", Path: "EasyOcr/latin_g2.pth"},
+	}
+	models := make([]modelItem, 0, len(specs))
+	allPresent := true
+	for _, m := range specs {
+		info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(m.Path)))
+		if err == nil {
+			m.Present = true
+			m.SizeMB = info.Size() / 1024 / 1024
+		} else {
+			allPresent = false
+		}
+		models = append(models, m)
+	}
+
+	updated := ""
+	if b, err := os.ReadFile(filepath.Join(dir, "VERSION")); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.HasPrefix(line, "updated:") {
+				updated = strings.TrimSpace(strings.TrimPrefix(line, "updated:"))
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "success", "data": gin.H{
+		"available": allPresent,
+		"dir":       dir,
+		"updated":   updated,
+		"models":    models,
+	}})
 }
 
 // ReconnectDocReader reconnects the document converter to a new (or same) DocReader address.

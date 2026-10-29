@@ -16,7 +16,38 @@
       <t-alert theme="error" :message="error">
         <template #operation>
           <t-button size="small" @click="loadAll">{{ $t('settings.parser.retry') }}</t-button>
-        </template>
+    
+      <!-- Docling 离线模型清单（只读，来自 /system/parser-engines/docling-models） -->
+      <div v-if="doclingModels" class="engine-card docling-models-card">
+        <div class="engine-card__header">
+          <h3 class="engine-card__title">{{ $t('settings.parser.doclingModelsTitle') }}</h3>
+          <span
+            class="engine-card__status"
+            :class="doclingModels.available ? 'engine-card__status--on' : 'engine-card__status--err'"
+          >
+            <span class="engine-card__status-dot" />
+            {{ doclingModels.available ? $t('settings.parser.doclingModelsReady') : $t('settings.parser.doclingModelsMissing') }}
+          </span>
+        </div>
+        <table class="docling-models__table">
+          <tbody>
+            <tr v-for="m in doclingModels.models" :key="m.name">
+              <td class="docling-models__name">{{ m.name }}</td>
+              <td class="docling-models__cat">{{ m.category }}</td>
+              <td class="docling-models__size">
+                {{ m.present ? `${m.size_mb} MB` : $t('settings.parser.doclingModelsMissing') }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="docling-models__meta">
+          {{ $t('settings.parser.doclingModelsUpdated') }} {{ doclingModels.updated || '—' }} · {{ doclingModels.dir }}
+        </p>
+        <p v-if="!doclingModels.available" class="docling-models__hint">
+          {{ $t('settings.parser.doclingModelsMissingHint') }}
+        </p>
+      </div>
+    </template>
       </t-alert>
     </div>
 
@@ -424,6 +455,7 @@ import {
   type ParserEngineConfig,
 } from '@/api/system'
 import { getWeKnoraCloudStatus } from '@/api/model'
+import { getDoclingModels, type DoclingModelsInfo } from '@/api/system'
 
 const { t } = useI18n()
 const uiStore = useUIStore()
@@ -474,6 +506,7 @@ const engines = ref<ParserEngineInfo[]>([])
 const docreaderAddrEnv = ref('')
 const docreaderTransport = ref<'grpc' | 'http'>('grpc')
 const connected = ref(false)
+const doclingModels = ref<DoclingModelsInfo | null>(null)
 const loading = ref(true)
 const error = ref('')
 
@@ -619,6 +652,12 @@ async function loadAll() {
   loading.value = true
   error.value = ''
   await Promise.all([loadEngines(), loadConfig(), checkWkcStatus()])
+  // Docling 离线模型清单（独立于引擎配置，失败不阻塞本页）
+  getDoclingModels()
+    .then(r => {
+      doclingModels.value = r.data
+    })
+    .catch(() => {})
   loading.value = false
 }
 
@@ -1165,4 +1204,36 @@ onMounted(loadAll)
   background: rgba(98, 53, 187, 0.12);
   color: #6235BB;
 }
+
+<style scoped>
+.docling-models-card {
+  margin-top: 12px;
+  padding: 12px 16px;
+}
+.docling-models__table {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+.docling-models__table td {
+  padding: 4px 8px 4px 0;
+}
+.docling-models__name {
+  font-weight: 500;
+}
+.docling-models__cat,
+.docling-models__size {
+  color: var(--td-text-color-secondary, #888);
+}
+.docling-models__meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder, #999);
+}
+.docling-models__hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--td-warning-color, #e37318);
+}
+</style>
 </style>

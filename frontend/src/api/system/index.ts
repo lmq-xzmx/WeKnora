@@ -162,6 +162,26 @@ export function checkParserEngines(config: ParserEngineConfig): Promise<ParserEn
   return post('/api/v1/system/parser-engines/check', config)
 }
 
+export interface DoclingModelItem {
+  name: string
+  category: string
+  path: string
+  size_mb: number
+  present: boolean
+}
+
+export interface DoclingModelsInfo {
+  available: boolean
+  dir: string
+  updated: string
+  models: DoclingModelItem[]
+}
+
+/** Docling 解析引擎（odl-hybrid）离线模型清单（只读） */
+export function getDoclingModels(): Promise<{ data: DoclingModelsInfo }> {
+  return get('/api/v1/system/parser-engines/docling-models')
+}
+
 export function getParserEngineConfig(): Promise<{ data: ParserEngineConfig }> {
   return get('/api/v1/tenants/kv/parser-engine-config')
 }
