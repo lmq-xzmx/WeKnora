@@ -17,10 +17,15 @@ WORKDIR /build
 ARG APK_MIRROR_ARG
 ARG NPM_MIRROR_ARG
 ARG RUSTUP_MIRROR_ARG
+ARG CARGO_MIRROR_ARG
 RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     if [ -n "$NPM_MIRROR_ARG" ]; then npm config set registry "$NPM_MIRROR_ARG"; fi && \
+    if [ -n "$CARGO_MIRROR_ARG" ]; then \
+        mkdir -p /usr/local/cargo && \
+        printf '[source.crates-io]\nreplace-with = "mirror"\n\n[source.mirror]\nregistry = "%s"\n' "$CARGO_MIRROR_ARG" > /usr/local/cargo/config.toml; \
+    fi && \
     apt-get update && \
     apt-get install -y --no-install-recommends git python3 ca-certificates curl build-essential cmake pkg-config && \
     rm -rf /var/lib/apt/lists/*
@@ -93,11 +98,24 @@ ENV GO_VERSION=${GO_VERSION_ARG}
 # engine; pass WITH_ANYDOC=0 to skip the Rust toolchain (~few minutes and
 # ~1 GB of build-stage layers).
 ARG WITH_ANYDOC=1
+ARG RUSTUP_MIRROR_ARG
+ARG CARGO_MIRROR_ARG
 ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:$PATH
+# rustup 也要走国内镜像：工具链下载走 RUSTUP_DIST_SERVER，
+# 安装器本体走 RUSTUP_UPDATE_ROOT（都是官方源时只有 60KB/s，会卡住）
+# crates.io 同样换成国内镜像（sparse index，不用克隆整个索引）
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     if [ "$WITH_ANYDOC" = "1" ]; then \
+        if [ -n "$RUSTUP_MIRROR_ARG" ]; then \
+            export RUSTUP_DIST_SERVER="https://${RUSTUP_MIRROR_ARG}/rustup" \
+                   RUSTUP_UPDATE_ROOT="https://${RUSTUP_MIRROR_ARG}/rustup/rustup"; \
+        fi; \
+        if [ -n "$CARGO_MIRROR_ARG" ]; then \
+            mkdir -p /usr/local/cargo && \
+            printf '[source.crates-io]\nreplace-with = "mirror"\n\n[source.mirror]\nregistry = "%s"\n' "$CARGO_MIRROR_ARG" > /usr/local/cargo/config.toml; \
+        fi; \
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
             | sh -s -- -y --profile minimal --default-toolchain stable && \
         ./scripts/build-anydoc-lib.sh; \

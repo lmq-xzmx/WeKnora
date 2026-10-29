@@ -29,6 +29,7 @@ APK_MIRROR_ARG=${APK_MIRROR_ARG:-mirrors.aliyun.com}          # app（历史命�
 APT_MIRROR=${APT_MIRROR:-mirrors.aliyun.com}                  # docreader / odl / sandbox
 NPM_MIRROR_ARG=${NPM_MIRROR_ARG:-https://registry.npmmirror.com}
 RUSTUP_MIRROR_ARG=${RUSTUP_MIRROR_ARG:-mirrors.aliyun.com}
+CARGO_MIRROR_ARG=${CARGO_MIRROR_ARG:-sparse+https://rsproxy.cn/index/}
 PIP_INDEX_URL=${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
 UV_INDEX_URL=${UV_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
 
@@ -60,7 +61,7 @@ M_DOC=""
 M_ODL=""
 M_SANDBOX=""
 if [ "$USE_MIRROR" = "1" ]; then
-  M_APP="--build-arg APK_MIRROR_ARG=$APK_MIRROR_ARG --build-arg NPM_MIRROR_ARG=$NPM_MIRROR_ARG --build-arg RUSTUP_MIRROR_ARG=$RUSTUP_MIRROR_ARG"
+  M_APP="--build-arg APK_MIRROR_ARG=$APK_MIRROR_ARG --build-arg NPM_MIRROR_ARG=$NPM_MIRROR_ARG --build-arg RUSTUP_MIRROR_ARG=$RUSTUP_MIRROR_ARG --build-arg CARGO_MIRROR_ARG=$CARGO_MIRROR_ARG"
   M_UI="--build-arg NPM_REGISTRY=$NPM_MIRROR_ARG"
   M_DOC="--build-arg APT_MIRROR=$APT_MIRROR --build-arg PIP_INDEX_URL=$PIP_INDEX_URL --build-arg UV_INDEX_URL=$UV_INDEX_URL"
   M_ODL="--build-arg APT_MIRROR=$APT_MIRROR"

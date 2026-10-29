@@ -40,7 +40,7 @@ for repo in $REPOS; do
     docker push "$REG/$repo:latest"
     REUSED="$REUSED $repo"
   else
-    echo "--- $repo:$TAG 不存在 → 需要构建"
+    echo "--- $repo:$TAG 不存在"
     MISSING="$MISSING $repo"
   fi
 done
@@ -51,6 +51,18 @@ if [ -z "$MISSING" ]; then
   exit 0
 fi
 
+# 一个都没有 → 说明这个提交从来没构建过（不是「按路径裁剪掉了」），必须从零构建
+if [ -z "$REUSED" ]; then
+  echo ""
+  echo "=== registry 里没有 $TAG 的任何镜像 → 从零构建 ==="
+  sh scripts/ci-build.sh
+  exit 0
+fi
+
+# 有一部分 → 说明 NAS 的路径裁剪本来就只构建了部分镜像。
+# 缺的这些镜像「当前版本」就是现有的 latest（路径没变，镜像也不用变），
+# 这里不重建，直接沿用 —— 重建既慢又没意义。
 echo ""
-echo "=== 以下仓库缺少 $TAG 版本，改为本地构建：$MISSING ==="
-REPOS_TO_BUILD="$MISSING" sh scripts/ci-build.sh
+echo "=== 复用 ${REUSED}"
+echo "=== 以下仓库没有 $TAG 版本，沿用现有的 latest（NAS 的路径裁剪判定它们本次无需重建）：$MISSING"
+echo "=== 本次发布未重新编译 ==="

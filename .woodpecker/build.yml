@@ -45,6 +45,7 @@ steps:
       APK_MIRROR_ARG: mirrors.aliyun.com
       NPM_MIRROR_ARG: https://registry.npmmirror.com
       RUSTUP_MIRROR_ARG: mirrors.aliyun.com
+      CARGO_MIRROR_ARG: sparse+https://rsproxy.cn/index/
       APT_MIRROR: mirrors.aliyun.com
       PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
       UV_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
