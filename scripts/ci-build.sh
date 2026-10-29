@@ -15,6 +15,13 @@ set -e
 REG=${REG:-100.108.142.49:5000}
 TAG=${TAG:-${CI_COMMIT_SHA}}
 
+# 国内镜像源：NAS 直连官方源极慢（实测 deb.debian.org 35KB/s，一个 apt 包要一分钟；
+# pypi / npmjs / static.rust-lang.org 同理）。全部做成可覆盖的变量。
+APK_MIRROR_ARG=${APK_MIRROR_ARG:-mirrors.aliyun.com}
+NPM_MIRROR_ARG=${NPM_MIRROR_ARG:-registry.npmmirror.com}
+RUSTUP_MIRROR_ARG=${RUSTUP_MIRROR_ARG:-mirrors.aliyun.com}
+APT_MIRROR=${APT_MIRROR:-http://mirrors.aliyun.com}
+
 # CI_PIPELINE_FILES 是 JSON 数组：["a/b.go","c/d.ts"]
 # 去掉括号与引号后按空格/逗号拆成逐个文件
 CHANGED=$(echo "${CI_PIPELINE_FILES:-}" | tr -d '[]"' | tr ',' ' ')
@@ -48,7 +55,9 @@ build_app() {
   echo "=== 构建 wechatopenai/weknora-app ==="
   docker build \
     --build-arg GOPROXY_ARG="${GOPROXY_ARG:-https://goproxy.cn,direct}" \
-    --build-arg APK_MIRROR_ARG="${APK_MIRROR_ARG:-mirrors.aliyun.com}" \
+    --build-arg APK_MIRROR_ARG="$APK_MIRROR_ARG" \
+    --build-arg NPM_MIRROR_ARG="$NPM_MIRROR_ARG" \
+    --build-arg RUSTUP_MIRROR_ARG="$RUSTUP_MIRROR_ARG" \
     -t "$REG/wechatopenai/weknora-app:$TAG" \
     -t "$REG/wechatopenai/weknora-app:latest" \
     -f docker/Dockerfile.app .
@@ -58,6 +67,7 @@ build_app() {
 build_ui() {
   echo "=== 构建 wechatopenai/weknora-ui ==="
   docker build \
+    --build-arg NPM_REGISTRY="$NPM_MIRROR_ARG" \
     -t "$REG/wechatopenai/weknora-ui:$TAG" \
     -t "$REG/wechatopenai/weknora-ui:latest" \
     frontend/
@@ -67,6 +77,7 @@ build_ui() {
 build_docreader() {
   echo "=== 构建 wechatopenai/weknora-docreader ==="
   docker build \
+    --build-arg APT_MIRROR="$APT_MIRROR" \
     -t "$REG/wechatopenai/weknora-docreader:$TAG" \
     -t "$REG/wechatopenai/weknora-docreader:latest" \
     -f docker/Dockerfile.docreader .

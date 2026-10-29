@@ -1,12 +1,27 @@
 # Build extension and daemon from the same pinned source on the runtime architecture.
 FROM --platform=$TARGETPLATFORM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS browserskill
 WORKDIR /build
-RUN apt-get update && \
+# 这一阶段要装 487MB 的 Debian 包 + Rust 工具链 + pnpm 依赖，
+# 直连官方源在国内极慢（实测 deb.debian.org 35KB/s，一个包要一分钟）。
+# 三个源都支持用构建参数切到国内镜像，见 scripts/ci-build.sh。
+ARG APK_MIRROR_ARG
+ARG NPM_MIRROR_ARG
+ARG RUSTUP_MIRROR_ARG
+RUN if [ -n "$APK_MIRROR_ARG" ]; then \
+        sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
+    fi && \
+    if [ -n "$NPM_MIRROR_ARG" ]; then npm config set registry "$NPM_MIRROR_ARG"; fi && \
+    apt-get update && \
     apt-get install -y --no-install-recommends git python3 ca-certificates curl build-essential cmake pkg-config && \
     rm -rf /var/lib/apt/lists/*
 ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:$PATH
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+# RUSTUP_DIST_SERVER 决定工具链从哪下（官方源在国内很慢）
+RUN if [ -n "$RUSTUP_MIRROR_ARG" ]; then \
+        export RUSTUP_DIST_SERVER="https://${RUSTUP_MIRROR_ARG}/rustup" \
+               RUSTUP_UPDATE_ROOT="https://${RUSTUP_MIRROR_ARG}/rustup/rustup"; \
+    fi; \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
 COPY scripts/build_browserskill.sh scripts/browserskill-release.json ./scripts/
 ARG TARGETOS
 ARG TARGETARCH
