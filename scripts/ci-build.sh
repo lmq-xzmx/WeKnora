@@ -122,34 +122,48 @@ build_odl_hybrid() {
 echo "REG=$REG  TAG=$TAG"
 echo "变更文件=${CHANGED:-<未提供，全部构建>}"
 
+# REPOS_TO_BUILD：指定只构建这几个仓库（发布脚本复用 NAS 产物时用得上）
+# 未指定时按「核心镜像每次构建 + 低频镜像按变更文件裁剪」执行
+want() {
+  if [ -n "$REPOS_TO_BUILD" ]; then
+    for r in $REPOS_TO_BUILD; do
+      [ "$r" = "$1" ] && return 0
+    done
+    return 1
+  fi
+  return 0
+}
+
 # 核心镜像：每次都构建
-build_app
-build_ui
+if want wechatopenai/weknora-app; then build_app; fi
+if want wechatopenai/weknora-ui; then build_ui; fi
 
 # 低频镜像：只在相关源码变更时构建（装依赖很慢，日常提交不必等）
-if changed_prefix "docreader/" || changed_file "docker/Dockerfile.docreader"; then
+if want wechatopenai/weknora-docreader \
+   && { changed_prefix "docreader/" || changed_file "docker/Dockerfile.docreader"; }; then
   build_docreader
-else
+elif want wechatopenai/weknora-docreader; then
   echo "--- 跳过 weknora-docreader（本次未变更相关文件）"
 fi
 
-if changed_file "docker/Dockerfile.sandbox" \
-   || changed_file "scripts/build_browserskill.sh" \
-   || changed_file "scripts/browserskill-release.json"; then
+if want wechatopenai/weknora-sandbox \
+   && { changed_file "docker/Dockerfile.sandbox" \
+        || changed_file "scripts/build_browserskill.sh" \
+        || changed_file "scripts/browserskill-release.json"; }; then
   build_sandbox
-else
+elif want wechatopenai/weknora-sandbox; then
   echo "--- 跳过 weknora-sandbox（本次未变更相关文件）"
 fi
 
-if changed_prefix "mcp-server/"; then
+if want weknora-mcp && changed_prefix "mcp-server/"; then
   build_mcp
-else
+elif want weknora-mcp; then
   echo "--- 跳过 weknora-mcp（本次未变更相关文件）"
 fi
 
-if changed_file "docker/Dockerfile.odl-hybrid"; then
+if want weknora-odl-hybrid && changed_file "docker/Dockerfile.odl-hybrid"; then
   build_odl_hybrid
-else
+elif want weknora-odl-hybrid; then
   echo "--- 跳过 weknora-odl-hybrid（本次未变更相关文件）"
 fi
 

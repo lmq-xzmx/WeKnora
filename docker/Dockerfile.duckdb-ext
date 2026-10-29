@@ -1,0 +1,33 @@
+# DuckDB 扩展预下载镜像
+#
+# 为什么需要它：
+#   app 镜像构建时要下载 DuckDB 的 spatial / excel 扩展，直连
+#   extensions.duckdb.org 在国内只有 12-24KB/s 且频繁断流（构建直接失败）。
+#   这个镜像把扩展预下载好（在一台网络通畅的机器上构建一次），
+#   app 镜像构建时用 `COPY --from=duckdb-ext /root/.duckdb /root/.duckdb`
+#   直接从内网 registry 取，全程不出内网。
+#
+# 怎么用：
+#   docker build -t 100.108.142.49:5000/duckdb-ext:<duckdb版本> -f docker/Dockerfile.duckdb-ext .
+#   docker push 100.108.142.49:5000/duckdb-ext:<duckdb版本>
+#
+# ⚠️ 版本必须和 go.mod 里的 duckdb-go 版本一致 —— 扩展按 duckdb 版本分目录存放。
+#    升级 duckdb-go 后要重新构建并推送这个镜像（tag 里的版本号跟着改）。
+FROM golang:1.26-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS builder
+
+WORKDIR /app
+
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GOSUMDB=off
+
+# go.mod 里 replace 指向的第三方模块也要在 go mod download 之前存在
+COPY go.mod go.sum ./
+COPY third_party/anydoc-go/go.mod third_party/anydoc-go/go.mod
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY cmd/download cmd/download
+RUN go run cmd/download/duckdb/duckdb.go
+
+# 运行时只需要扩展文件本身（scratch 即可，镜像只有几 MB）
+FROM scratch AS runtime
+COPY --from=builder /root/.duckdb /root/.duckdb

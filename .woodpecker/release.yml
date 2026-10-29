@@ -29,7 +29,9 @@ steps:
       - uname -m
       - test "$(uname -m)" = "x86_64" || (echo "构建机不是 x86_64，中止" && exit 1)
 
-  # ── 构建并推送镜像 ────────────────────────────────────
+  # ── 复用 NAS 已构建的镜像（没有才在 ECS 上重建）────────
+  # 日常 push main 时 NAS 已经把镜像构建好推到 registry 了，
+  # 发布时不必再编译一遍 —— 直接把那个 commit 的镜像重打成 latest，秒级完成。
   build:
     image: 100.108.142.49:5000/docker:cli
     environment:
@@ -41,7 +43,7 @@ steps:
       PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
       UV_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
     commands:
-      - sh scripts/ci-build.sh
+      - sh scripts/ci-release.sh
 
   # ── 滚动更新生产机 ────────────────────────────────────
   deploy:
