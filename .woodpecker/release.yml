@@ -1,13 +1,21 @@
 # ─────────────────────────────────────────────────────────────
-# 紧急发布 —— 生产 ECS 上直接构建并部署
+# 发布 —— 生产 ECS 上构建并部署（打 tag 触发）
 #
-# 触发方式：打 tag（git tag v1.2.3 && git push gitea v1.2.3）
-#   日常推送 main 走 build.yml，在 NAS 上慢慢构建（不占生产机硬盘）
-#   紧急发布走这里，构建与部署都在生产 ECS 上跑，几分钟出镜像
+# 为什么「发布」是打 tag：
+#   生产环境要「代码合入」与「上生产」分开。push 到 main 只跑 build.yml
+#   （只构建、不部署），不成熟的版本不会被自动推上生产。
+#   等确认可以发布了，再打一个 tag：
+#       git tag v1.2.3 && git push gitea v1.2.3
+#   这时才在生产 ECS 上构建并部署 —— 一步到位，且由人显式发起。
 #
-# 构建与部署逻辑与 build.yml / deploy.yml 共用同一份脚本，产物一致。
+# 为什么发布构建放 ECS（不在 NAS）：
+#   发布要快。NAS 只有 4 核，日常 CI 构建慢慢跑没关系，
+#   但发布要分钟级出镜像。ECS 构建天然 amd64、走 Tailscale、能 SSH 生产机。
+#   日常 CI 构建仍然在 NAS 上跑，生产机硬盘不会因为构建缓存被占。
+#
+# 构建与部署逻辑与 build.yml 共用同一份脚本，产物一致。
 # ─────────────────────────────────────────────────────────────
-name: urgent
+name: release
 when:
   - event: tag
 labels:
@@ -27,6 +35,11 @@ steps:
     environment:
       GOPROXY_ARG: https://goproxy.cn,direct
       APK_MIRROR_ARG: mirrors.aliyun.com
+      NPM_MIRROR_ARG: https://registry.npmmirror.com
+      RUSTUP_MIRROR_ARG: mirrors.aliyun.com
+      APT_MIRROR: mirrors.aliyun.com
+      PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
+      UV_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
     commands:
       - sh scripts/ci-build.sh
 

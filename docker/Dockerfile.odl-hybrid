@@ -13,6 +13,12 @@
 # Digest pinned for reproducibility
 FROM python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370 AS builder
 
+# 国内构建机直连 deb.debian.org 很慢（NAS 实测 35KB/s），可用构建参数切国内源
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s@deb.debian.org@${APT_MIRROR}@g" /etc/apt/sources.list.d/debian.sources; \
+    fi
+
 WORKDIR /app
 
 # Toolchain for compiling any C-extension wheels (numpy, opencv-python-headless,
@@ -50,6 +56,12 @@ RUN python -m venv /opt/venv \
 # builder's lower layer).
 # Digest pinned for reproducibility
 FROM python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370 AS runtime
+
+# 国内构建机直连 deb.debian.org 很慢（NAS 实测 35KB/s），可用构建参数切国内源
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s@deb.debian.org@${APT_MIRROR}@g" /etc/apt/sources.list.d/debian.sources; \
+    fi
 
 # Re-install just the runtime libraries (cheap, no toolchain).
 RUN apt-get update \

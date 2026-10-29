@@ -4,8 +4,13 @@
 # 为什么构建放 NAS：
 #   - NAS 有 868G 大盘（Docker Root Dir 在 /vol1/docker），构建缓存与中间层
 #     落在这里，不占生产机硬盘（生产机硬盘留给业务数据）
-#   - NAS 只有 4 核 / 8G 内存，构建慢，日常「不紧急」的发布可以慢慢跑
+#   - NAS 只有 4 核 / 8G 内存，构建慢，日常「不紧急」的构建可以慢慢跑
 #   - 紧急发布打 tag 触发 urgent 工作流，由生产 ECS 上的 agent 快速构建
+#
+# ⚠️ 本工作流**只构建、不部署**。生产环境是手动发布：
+#   构建完在 Woodpecker 界面点「Trigger Pipeline」触发 deploy 工作流，
+#   或用 API/CLI 触发（见 .woodpecker/deploy.yml 顶部说明）。
+#   这样「代码合入」和「上生产」是分开的两步，不成熟的版本不会被自动推上去。
 #
 # 标签路由（Woodpecker 3.19）：
 #   workflow 的 labels 必须是 agent labels 的子集，格式为 key=value。
@@ -13,7 +18,7 @@
 #   - ECS agent: platform=nas,builder=ecs → 只接 deploy / urgent 工作流
 #   两个 agent 的标签集合互不包含，因此路由是确定的（不会互相抢单）。
 #
-# 工作流名 = 文件名（build.yml → build），deploy.yml 用 depends_on 引用它。
+# 工作流名 = 文件名（build.yml → build）。
 # ─────────────────────────────────────────────────────────────
 name: build
 when:
@@ -38,5 +43,19 @@ steps:
     environment:
       GOPROXY_ARG: https://goproxy.cn,direct
       APK_MIRROR_ARG: mirrors.aliyun.com
+      NPM_MIRROR_ARG: https://registry.npmmirror.com
+      RUSTUP_MIRROR_ARG: mirrors.aliyun.com
+      APT_MIRROR: mirrors.aliyun.com
+      PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
+      UV_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
     commands:
       - sh scripts/ci-build.sh
+
+  # ── Registry 清理：防止 CI 旧版本镜像在 NAS 无限堆积 ────
+  # 逻辑在 scripts/ci-registry-cleanup.sh 里（含 digest 校验，
+  # 确保不会连带删掉生产正在用的 latest）。此处只负责调用。
+  cleanup-registry:
+    image: 100.108.142.49:5000/alpine:3.20
+    commands:
+      - apk add --no-cache curl
+      - sh scripts/ci-registry-cleanup.sh

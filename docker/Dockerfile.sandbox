@@ -40,6 +40,15 @@ FROM --platform=$TARGETPLATFORM ghcr.io/astral-sh/uv:0.12.4@sha256:d0a6eca6c669d
 # Digest pinned for reproducibility
 FROM --platform=$TARGETPLATFORM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS runtime
 
+# 国内构建机直连官方源很慢（NAS 实测 deb.debian.org 35KB/s、npmjs 更慢），
+# 可用构建参数切到国内源
+ARG APT_MIRROR=""
+ARG NPM_REGISTRY=""
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s@deb.debian.org@${APT_MIRROR}@g" /etc/apt/sources.list.d/debian.sources; \
+    fi && \
+    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi
+
 # Copy Node.js from node image (avoids NodeSource install overhead)
 COPY --from=node-base /usr/local/bin/node /usr/local/bin/
 COPY --from=node-base /usr/local/lib/node_modules /usr/local/lib/node_modules
@@ -155,6 +164,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 # C.UTF-8 is built into glibc; do not pull locales-all.
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
+
+# 继承 runtime 的国内源设置（新 stage 不会继承 ARG，需要重新声明）
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s@deb.debian.org@${APT_MIRROR}@g" /etc/apt/sources.list.d/debian.sources; \
+    fi
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \

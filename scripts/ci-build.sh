@@ -17,10 +17,13 @@ TAG=${TAG:-${CI_COMMIT_SHA}}
 
 # 国内镜像源：NAS 直连官方源极慢（实测 deb.debian.org 35KB/s，一个 apt 包要一分钟；
 # pypi / npmjs / static.rust-lang.org 同理）。全部做成可覆盖的变量。
-APK_MIRROR_ARG=${APK_MIRROR_ARG:-mirrors.aliyun.com}
-NPM_MIRROR_ARG=${NPM_MIRROR_ARG:-registry.npmmirror.com}
+# ⚠️ npm/pip 必须是**完整 URL**（带 https://），只给域名会报 ERR_INVALID_URL。
+APK_MIRROR_ARG=${APK_MIRROR_ARG:-mirrors.aliyun.com}          # app（历史命名）
+APT_MIRROR=${APT_MIRROR:-mirrors.aliyun.com}                  # docreader / odl / sandbox
+NPM_MIRROR_ARG=${NPM_MIRROR_ARG:-https://registry.npmmirror.com}
 RUSTUP_MIRROR_ARG=${RUSTUP_MIRROR_ARG:-mirrors.aliyun.com}
-APT_MIRROR=${APT_MIRROR:-http://mirrors.aliyun.com}
+PIP_INDEX_URL=${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+UV_INDEX_URL=${UV_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
 
 # CI_PIPELINE_FILES 是 JSON 数组：["a/b.go","c/d.ts"]
 # 去掉括号与引号后按空格/逗号拆成逐个文件
@@ -78,6 +81,8 @@ build_docreader() {
   echo "=== 构建 wechatopenai/weknora-docreader ==="
   docker build \
     --build-arg APT_MIRROR="$APT_MIRROR" \
+    --build-arg PIP_INDEX_URL="$PIP_INDEX_URL" \
+    --build-arg UV_INDEX_URL="$UV_INDEX_URL" \
     -t "$REG/wechatopenai/weknora-docreader:$TAG" \
     -t "$REG/wechatopenai/weknora-docreader:latest" \
     -f docker/Dockerfile.docreader .
@@ -87,6 +92,8 @@ build_docreader() {
 build_sandbox() {
   echo "=== 构建 wechatopenai/weknora-sandbox ==="
   docker build \
+    --build-arg APT_MIRROR="$APT_MIRROR" \
+    --build-arg NPM_REGISTRY="$NPM_MIRROR_ARG" \
     -t "$REG/wechatopenai/weknora-sandbox:$TAG" \
     -t "$REG/wechatopenai/weknora-sandbox:latest" \
     -f docker/Dockerfile.sandbox .
@@ -105,6 +112,7 @@ build_mcp() {
 build_odl_hybrid() {
   echo "=== 构建 weknora-odl-hybrid ==="
   docker build \
+    --build-arg APT_MIRROR="$APT_MIRROR" \
     -t "$REG/weknora-odl-hybrid:$TAG" \
     -t "$REG/weknora-odl-hybrid:latest" \
     -f docker/Dockerfile.odl-hybrid .
