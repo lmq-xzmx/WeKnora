@@ -14,23 +14,26 @@ set -e
 
 REG=${REG:-100.108.142.49:5000}
 TAG=${TAG:-${CI_COMMIT_SHA}}
-CHANGED=${CI_PIPELINE_FILES:-}
+
+# CI_PIPELINE_FILES 是 JSON 数组：["a/b.go","c/d.ts"]
+# 去掉括号与引号后按空格/逗号拆成逐个文件
+CHANGED=$(echo "${CI_PIPELINE_FILES:-}" | tr -d '[]"' | tr ',' ' ')
 
 # 只在文件列表非空时才做裁剪；拿不到变更列表就全部构建（宁可多构建，不要漏构建）
 changed_prefix() {
   [ -n "$CHANGED" ] || return 0
-  case ",$CHANGED," in
-    *",$1"*) return 0 ;;
-    *) return 1 ;;
-  esac
+  for f in $CHANGED; do
+    case "$f" in "$1"*) return 0 ;; esac
+  done
+  return 1
 }
 
 changed_file() {
   [ -n "$CHANGED" ] || return 0
-  case ",$CHANGED," in
-    *",$1,"*) return 0 ;;
-    *) return 1 ;;
-  esac
+  for f in $CHANGED; do
+    if [ "$f" = "$1" ]; then return 0; fi
+  done
+  return 1
 }
 
 # 推送镜像：同时打 <tag> 与 latest 两个标签
