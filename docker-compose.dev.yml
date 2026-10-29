@@ -346,19 +346,19 @@ services:
       args:
         # 直连官方源在国内很慢（NAS 实测 deb.debian.org 25KB/s），走国内镜像
         APT_MIRROR: ${APT_MIRROR:-mirrors.ustc.edu.cn}
-        # 开发机是 arm64，torch/CUDA 那套（6.4GB）用不上 → 不带 OCR 依赖。
-        # 需要扫描件 OCR 时改回 1（镜像会大很多）。
-        WITH_OCR: ${ODL_WITH_OCR:-0}
     image: weknora-odl-hybrid:local
-    container_name: 小炬人-odl-hybrid
+    # 容器名必须是 ASCII（Docker 不接受中文），与开发机其它容器保持一致
+    container_name: WeKnora-odl-hybrid
     profiles:
       - odl-hybrid
     ports:
-      - "${ODL_HYBRID_PORT:-5002}:5002"
+      # 宿主机侧换端口：5002 在开发机上被用代码启动的后端占用
+      # （容器之间仍走 odl-hybrid:5002，不受影响）
+      - "${ODL_HYBRID_PORT:-5012}:5002"
     environment:
-      # 开发机镜像不带 OCR 依赖（WITH_OCR=0），所以只能用 --no-ocr。
-      # 扫描件 OCR 在开发机上走 WeKnora 内置 docreader / MinerU 兜底。
-      - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---no-ocr}
+      # 开发机镜像与生产一样是完整版（docling 依赖 torch，裁不掉），
+      # 所以可以真的开 OCR；开发阶段想省时间可以改成 --no-ocr。
+      - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---ocr-lang ch_sim,en}
       # 离线模型（从生产机分发过来的同一份，见 deploy/docling-models.VERSION）
       - DOCLING_ARTIFACTS_PATH=/models
       - HF_HUB_CACHE=/models/hub

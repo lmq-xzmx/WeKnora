@@ -43,26 +43,21 @@ RUN apt-get update \
 
 # Build into a venv so the runtime stage has no pip / setuptools / build tooling.
 #
-# WITH_OCR=1（生产默认）：带 [hybrid] extra，含 easyocr→torch→nvidia-cudnn（约 6.4GB）。
+# ⚠️ 必须带 [hybrid] extra，不能裁剪：
+#   入口是 opendataloader-pdf-hybrid，它启动时要 import uvicorn/fastapi/docling，
+#   而 docling 依赖 torch —— 少装任何一样，容器起来就 ImportError 退出。
+#   （曾经试过"去掉 extra 做轻量版"，镜像确实只有 397MB，但服务根本起不来。）
+#   代价是镜像约 6.8GB（x86_64，含 easyocr→torch→nvidia-cudnn）。
+#
 #   生产两台机器的 compose 用 :local 标签，且 override 里开了
 #   ODL_HYBRID_EXTRA_ARGS=--ocr-lang ch_sim,en —— 要真的跑 OCR，依赖不能缺。
-# WITH_OCR=0（开发机用）：不带 OCR 依赖，镜像小很多（几百 MB），
-#   构建也快得多 —— 开发机是 arm64，torch 那套 CUDA 包（nvidia_nccl 216MB）
-#   根本用不上，纯粹浪费磁盘和时间。代价是不支持扫描件 OCR。
-#
-# 镜像里的默认 ODL_HYBRID_EXTRA_ARGS 是 --no-ocr（与线上 :local 镜像一致），
-# 要不要开 OCR 由 compose 的环境变量决定。
-ARG WITH_OCR=1
+#   镜像里的默认 ODL_HYBRID_EXTRA_ARGS 是 --no-ocr（与线上 :local 镜像一致），
+#   要不要开 OCR 由 compose 的环境变量决定。
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
         -i https://mirrors.aliyun.com/pypi/simple/ \
-    && if [ "$WITH_OCR" = "1" ]; then \
-         /opt/venv/bin/pip install --no-cache-dir "opendataloader-pdf[hybrid]>=2.4.7" \
-             -i https://mirrors.aliyun.com/pypi/simple/ ; \
-       else \
-         /opt/venv/bin/pip install --no-cache-dir "opendataloader-pdf>=2.4.7" \
-             -i https://mirrors.aliyun.com/pypi/simple/ ; \
-       fi
+    && /opt/venv/bin/pip install --no-cache-dir "opendataloader-pdf[hybrid]>=2.4.7" \
+        -i https://mirrors.aliyun.com/pypi/simple/
 
 
 # Runtime: clean slim image, only the venv + needed libs (already installed
