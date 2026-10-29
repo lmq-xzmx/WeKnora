@@ -8,7 +8,7 @@
 #
 # 安全边界（重要）：
 #   1. 只处理本项目 CI 产出的 6 个仓库，绝不触碰第三方镜像。
-#   2. 只删「短 SHA 形态」的 CI tag（12 位十六进制），latest / local /
+#   2. 只删「提交号形态」的 CI tag（12-40 位十六进制），latest / local /
 #      语义化版本号一律保留 —— 生产 compose 只用 latest 与 local。
 #   3. 每个目标删除前都重新校验：其 digest 不得等于该仓库 latest 的 digest。
 #      registry 2.8.3 的 DELETE 只能按 digest，且会连带删除同 digest 的所有
@@ -31,12 +31,12 @@ digest_of() {
     | grep -i docker-content-digest | tr -d '\r' | awk '{print $2}'
 }
 
-# 列出形如 12 位十六进制的 CI tag
+# 列出 CI 产出的 tag（40 位或 12 位十六进制的提交号形态）
 ci_tags() {
   curl -sS "$REG/v2/$1/tags/list" \
     | tr ',' '\n' \
-    | sed -E 's/.*"([0-9a-f]{12})".*/\1/' \
-    | grep -E '^[0-9a-f]{12}$' | sort -r
+    | sed -E 's/.*"([0-9a-f]{12,40})".*/\1/' \
+    | grep -E '^[0-9a-f]{12,40}$' | sort -r
 }
 
 for repo in $CI_REPOS; do
