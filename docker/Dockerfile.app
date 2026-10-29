@@ -4,6 +4,10 @@
 # ⚠️ 版本号必须和 go.mod 的 duckdb-go 版本一致，升级 duckdb-go 要重建这个镜像。
 ARG DUCKDB_EXT_IMAGE=100.108.142.49:5000/duckdb-ext:1.5.2
 
+# DuckDB 扩展的预下载镜像（内网 registry）。这个阶段必须声明在
+# builder 之前 —— FROM 会切断当前阶段，插在中间会让 COPY 引用到自己。
+FROM ${DUCKDB_EXT_IMAGE} AS duckdb-ext
+
 # Build extension and daemon from the same pinned source on the runtime architecture.
 FROM --platform=$TARGETPLATFORM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS browserskill
 WORKDIR /build
@@ -67,7 +71,6 @@ COPY third_party/anydoc-go/go.mod third_party/anydoc-go/go.mod
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd/download cmd/download
 # 扩展从内网镜像 COPY 进来；go 脚本会检测到已安装而跳过下载
-FROM ${DUCKDB_EXT_IMAGE} AS duckdb-ext
 COPY --from=duckdb-ext /root/.duckdb /root/.duckdb
 RUN go run cmd/download/duckdb/duckdb.go
 COPY . .
