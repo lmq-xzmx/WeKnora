@@ -479,13 +479,18 @@ start_app() {
             export LANGFUSE_HOST="http://${DEV_REMOTE_HOST}:3000"
         fi
     else
-        export DB_HOST=127.0.0.1
-        export DOCREADER_ADDR=127.0.0.1:50051
-        export MINIO_ENDPOINT=127.0.0.1:9000
-        export REDIS_ADDR=127.0.0.1:6379
-        export MILVUS_ADDRESS=127.0.0.1:19530
-        export NEO4J_URI=bolt://127.0.0.1:7687
-        export QDRANT_HOST=127.0.0.1
+        # 本地模式：只补默认值，**不要覆盖 .env 里已经配好的值**。
+        # 这里的端口必须和 docker-compose.dev.yml 的端口映射一致：
+        #   postgres 15432、redis 16379、docreader 50051、minio 9000
+        # （之前硬写成 REDIS_ADDR=6379，而 dev-redis 映射在 16379 → 连接被拒）
+        export DB_HOST="${DB_HOST:-127.0.0.1}"
+        export DB_PORT="${DB_PORT:-15432}"
+        export DOCREADER_ADDR="${DOCREADER_ADDR:-127.0.0.1:50051}"
+        export MINIO_ENDPOINT="${MINIO_ENDPOINT:-127.0.0.1:9000}"
+        export REDIS_ADDR="${REDIS_ADDR:-127.0.0.1:16379}"
+        export MILVUS_ADDRESS="${MILVUS_ADDRESS:-127.0.0.1:19530}"
+        export NEO4J_URI="${NEO4J_URI:-bolt://127.0.0.1:7687}"
+        export QDRANT_HOST="${QDRANT_HOST:-127.0.0.1}"
     fi
     export DOCREADER_TRANSPORT="${DOCREADER_TRANSPORT:-grpc}"
 

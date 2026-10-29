@@ -340,13 +340,14 @@ services:
   # DOCREADER_ODL_HYBRID=docling-fast on docreader. Default --no-ocr (no EasyOCR).
   # Local build only — not published to Docker Hub.
   odl-hybrid:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.odl-hybrid
-      args:
-        # 直连官方源在国内很慢（NAS 实测 deb.debian.org 25KB/s），走国内镜像
-        APT_MIRROR: ${APT_MIRROR:-mirrors.ustc.edu.cn}
-    image: weknora-odl-hybrid:local
+    # 直接用内网 registry 里生产同一份镜像（和 docreader 一个做法）：
+    #   ① 与生产完全一致（同一 digest），开发机验证的就是线上那份
+    #   ② 不用在 arm64 Mac 上重建 —— arm64 的 torch 也会拖 651MB 的
+    #      nvidia-cudnn（用不上 CUDA），重建要 40 分钟 + 3GB 下载 + 4GB 磁盘
+    #   ③ Docker Desktop 用 Rosetta 跑 amd64，docreader 已经这么跑了
+    # 需要本地改 Dockerfile 调试时，用 --build 覆盖：
+    #   docker compose -f docker-compose.dev.yml --profile odl-hybrid build odl-hybrid
+    image: ${ODL_HYBRID_IMAGE:-100.108.142.49:5000/weknora-odl-hybrid:local}
     # 容器名必须是 ASCII（Docker 不接受中文），与开发机其它容器保持一致
     container_name: WeKnora-odl-hybrid
     profiles:
