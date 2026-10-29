@@ -42,11 +42,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/lists/*
 
 # Build into a venv so the runtime stage has no pip / setuptools / build tooling.
+# ⚠️ 必须带 [hybrid] extra：它拖入 easyocr→torch→nvidia-cudnn（约 6.4GB），
+#    生产两台机器的 compose 都用 :local 这个标签，并且 override 里开了
+#    ODL_HYBRID_EXTRA_ARGS=--ocr-lang ch_sim,en（要真的跑 OCR，依赖不能缺）。
+#    镜像里的默认 ODL_HYBRID_EXTRA_ARGS 仍是 --no-ocr（与线上 :local 镜像一致），
+#    要不要开 OCR 由生产 compose 的 override 决定。
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
         -i https://mirrors.aliyun.com/pypi/simple/ \
-    && /opt/venv/bin/pip install --no-cache-dir "opendataloader-pdf>=2.4.7" \
-        # 运行时默认 --no-ocr，不需要 [hybrid] extra（它会拖入 easyocr→torch→nvidia-cudnn 近 1GB） \
+    && /opt/venv/bin/pip install --no-cache-dir "opendataloader-pdf[hybrid]>=2.4.7" \
         -i https://mirrors.aliyun.com/pypi/simple/
 
 

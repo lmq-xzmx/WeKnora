@@ -167,6 +167,10 @@ build_odl_hybrid() {
       -f docker/Dockerfile.odl-hybrid .
   fi
   push weknora-odl-hybrid
+  # 生产两台机器的 compose 用的是 :local 标签（不是 :latest），
+  # CI 必须同步推 :local，否则发布永远更新不到线上这个容器。
+  docker tag "$REG/weknora-odl-hybrid:$TAG" "$REG/weknora-odl-hybrid:local"
+  docker push "$REG/weknora-odl-hybrid:local"
 }
 
 echo "REG=$REG  TAG=$TAG  USE_MIRROR=$USE_MIRROR"

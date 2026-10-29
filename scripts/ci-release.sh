@@ -38,6 +38,11 @@ for repo in $REPOS; do
     docker pull "$REG/$repo:$TAG"
     docker tag "$REG/$repo:$TAG" "$REG/$repo:latest"
     docker push "$REG/$repo:latest"
+    # weknora-odl-hybrid：生产 compose 用的是 :local，latest 之外还要同步 local
+    if [ "$repo" = "weknora-odl-hybrid" ]; then
+      docker tag "$REG/$repo:$TAG" "$REG/$repo:local"
+      docker push "$REG/$repo:local"
+    fi
     REUSED="$REUSED $repo"
   else
     echo "--- $repo:$TAG 不存在"
