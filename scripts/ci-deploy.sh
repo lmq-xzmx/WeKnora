@@ -5,15 +5,17 @@
 # 部署私钥由 agent 通过 WOODPECKER_BACKEND_DOCKER_VOLUMES 挂到步骤容器的
 # /root/.ssh/deploy_ed25519（只有 ECS 上的 agent 挂了这把钥匙）。
 #
-# 生产机清单：名称|地址|部署目录
-#   地址用 Tailscale 内网地址（100.x），只有内网不通时才退到公网地址。
+# 地址用 Tailscale 内网地址（100.x），只有内网不通时才退到公网地址。
 set -e
 
 KEY=${KEY:-/root/.ssh/deploy_ed25519}
 SSH_OPTS="-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=15 -i $KEY"
 
+# 生产机清单：名称|地址|部署目录
+#   两台都部署（88166038 = zhaoyun，45732375 = zhong-ke-ju）
 HOSTS="
 zhaoyun|100.102.197.48|/data/WeKnora
+zhongkeju|100.96.230.105|/data/WeKnora
 "
 
 deploy() {
