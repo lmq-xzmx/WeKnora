@@ -183,12 +183,16 @@ RUN mkdir -p /home/appuser/.local/bin && \
         # 不需要（也不能）再手动 ln —— uv 和 uvx 同源，ln 会报 "same file" 并返回 1。
         python3 -m pip install --break-system-packages --index-url="$UV_INDEX_URL_ARG" uv ; \
       else \
+        # 官方安装器装到 UV_INSTALL_DIR，下面的 ln 负责暴露到 /usr/local/bin
         timeout 120 curl -LsSf --retry 3 --retry-delay 2 https://astral.sh/uv/install.sh -o /tmp/uv-install.sh \
         && CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh /tmp/uv-install.sh ; \
       fi ) && \
-    ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx 2>/dev/null || true ; \
+    # pip 装的 uvx 在 /usr/local/bin；官方安装器的在 UV_INSTALL_DIR，两种都兜住
+    if [ ! -x /usr/local/bin/uvx ] && [ -x /home/appuser/.local/bin/uvx ]; then \
+        ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx ; \
+    fi ; \
     chown -R appuser:appuser /home/appuser && \
-    chmod +x /usr/local/bin/uvx
+    chmod +x /usr/local/bin/uvx /usr/local/bin/uv 2>/dev/null || true
 
 # Create data directories and set permissions
 RUN mkdir -p /data/files && \
