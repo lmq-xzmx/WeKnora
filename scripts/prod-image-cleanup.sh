@@ -107,6 +107,13 @@ done
 # 悬空镜像（<none>）一并清掉
 if [ "$DRY_RUN" != "1" ]; then
   docker image prune -f >/dev/null 2>&1 || true
+  # 构建缓存：CI 在本机构建时留下的中间层，保留 7 天内的，其余清掉
+  # 注意 CI 用的是 buildx，缓存挂在 buildx 上，`docker builder prune` 管不到
+  if docker buildx version >/dev/null 2>&1; then
+    docker buildx prune -f --filter until=168h >/dev/null 2>&1 || true
+  else
+    docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
+  fi
 fi
 
 # ── 4. 刷新业务镜像，保证是新的 ────────────────────────

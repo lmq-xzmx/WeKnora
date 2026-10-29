@@ -148,16 +148,18 @@ COPY --from=browserskill /opt/weknora/browserskill /opt/weknora/browserskill
 # Create a non-root user first
 RUN useradd -m -s /bin/bash appuser
 
-# First, install ca-certificates without mirror to ensure HTTPS works
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
-# Then switch to mirror if specified and install other packages
+# 装 ca-certificates 也要走镜像：官方源在国内只有 25KB/s，
+# 光索引+包就要 5 分钟（实测）。源的 URI 是 http://，不涉及 TLS，
+# 不存在「必须先从官方源装证书才能用镜像」的问题。
 RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# 装其余运行时依赖（已在上面切到镜像）
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential postgresql-client default-mysql-client tzdata sed curl bash vim wget \
         libsqlite3-0 \
@@ -174,7 +176,7 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
 # CDN (releases.astral.sh), which is unreliable on some networks; when it
 # fails we fall back to installing uv from PyPI (optionally via a mirror).
 RUN mkdir -p /home/appuser/.local/bin && \
-    (curl -LsSf --retry 3 --retry-delay 2 https://astral.sh/uv/install.sh | \
+    (curl -LsSf --retry 3 --retry-delay 2 --max-time 60 https://astral.sh/uv/install.sh | \
         CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh \
         || python3 -m pip install --break-system-packages \
             ${UV_INDEX_URL_ARG:+--index-url=$UV_INDEX_URL_ARG} uv) && \

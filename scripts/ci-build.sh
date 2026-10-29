@@ -25,8 +25,8 @@ USE_MIRROR=${USE_MIRROR:-1}
 # 国内镜像源：NAS 直连官方源极慢（实测 deb.debian.org 35KB/s，一个 apt 包要一分钟；
 # pypi / npmjs / static.rust-lang.org 同理）。全部做成可覆盖的变量。
 # ⚠️ npm/pip 必须是**完整 URL**（带 https://），只给域名会报 ERR_INVALID_URL。
-APK_MIRROR_ARG=${APK_MIRROR_ARG:-mirrors.aliyun.com}          # app（历史命名）
-APT_MIRROR=${APT_MIRROR:-mirrors.aliyun.com}                  # docreader / odl / sandbox
+APK_MIRROR_ARG=${APK_MIRROR_ARG:-mirrors.ustc.edu.cn}          # app（历史命名）
+APT_MIRROR=${APT_MIRROR:-mirrors.ustc.edu.cn}                  # docreader / odl / sandbox
 NPM_MIRROR_ARG=${NPM_MIRROR_ARG:-https://registry.npmmirror.com}
 RUSTUP_MIRROR_ARG=${RUSTUP_MIRROR_ARG:-mirrors.aliyun.com}
 CARGO_MIRROR_ARG=${CARGO_MIRROR_ARG:-sparse+https://rsproxy.cn/index/}
@@ -61,7 +61,7 @@ M_DOC=""
 M_ODL=""
 M_SANDBOX=""
 if [ "$USE_MIRROR" = "1" ]; then
-  M_APP="--build-arg APK_MIRROR_ARG=$APK_MIRROR_ARG --build-arg NPM_MIRROR_ARG=$NPM_MIRROR_ARG --build-arg RUSTUP_MIRROR_ARG=$RUSTUP_MIRROR_ARG --build-arg CARGO_MIRROR_ARG=$CARGO_MIRROR_ARG"
+  M_APP="--build-arg APK_MIRROR_ARG=$APK_MIRROR_ARG --build-arg NPM_MIRROR_ARG=$NPM_MIRROR_ARG --build-arg RUSTUP_MIRROR_ARG=$RUSTUP_MIRROR_ARG --build-arg CARGO_MIRROR_ARG=$CARGO_MIRROR_ARG --build-arg UV_INDEX_URL_ARG=$UV_INDEX_URL"
   M_UI="--build-arg NPM_REGISTRY=$NPM_MIRROR_ARG"
   M_DOC="--build-arg APT_MIRROR=$APT_MIRROR --build-arg PIP_INDEX_URL=$PIP_INDEX_URL --build-arg UV_INDEX_URL=$UV_INDEX_URL"
   M_ODL="--build-arg APT_MIRROR=$APT_MIRROR"

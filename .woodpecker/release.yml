@@ -36,11 +36,11 @@ steps:
     image: 100.108.142.49:5000/docker:cli
     environment:
       GOPROXY_ARG: https://goproxy.cn,direct
-      APK_MIRROR_ARG: mirrors.aliyun.com
+      APK_MIRROR_ARG: mirrors.ustc.edu.cn
       NPM_MIRROR_ARG: https://registry.npmmirror.com
       RUSTUP_MIRROR_ARG: mirrors.aliyun.com
       CARGO_MIRROR_ARG: sparse+https://rsproxy.cn/index/
-      APT_MIRROR: mirrors.aliyun.com
+      APT_MIRROR: mirrors.ustc.edu.cn
       PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
       UV_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
     commands:
