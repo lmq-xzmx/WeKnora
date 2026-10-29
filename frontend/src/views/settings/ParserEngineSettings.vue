@@ -16,38 +16,7 @@
       <t-alert theme="error" :message="error">
         <template #operation>
           <t-button size="small" @click="loadAll">{{ $t('settings.parser.retry') }}</t-button>
-    
-      <!-- Docling 离线模型清单（只读，来自 /system/parser-engines/docling-models） -->
-      <div v-if="doclingModels" class="engine-card docling-models-card">
-        <div class="engine-card__header">
-          <h3 class="engine-card__title">{{ $t('settings.parser.doclingModelsTitle') }}</h3>
-          <span
-            class="engine-card__status"
-            :class="doclingModels.available ? 'engine-card__status--on' : 'engine-card__status--err'"
-          >
-            <span class="engine-card__status-dot" />
-            {{ doclingModels.available ? $t('settings.parser.doclingModelsReady') : $t('settings.parser.doclingModelsMissing') }}
-          </span>
-        </div>
-        <table class="docling-models__table">
-          <tbody>
-            <tr v-for="m in doclingModels.models" :key="m.name">
-              <td class="docling-models__name">{{ m.name }}</td>
-              <td class="docling-models__cat">{{ m.category }}</td>
-              <td class="docling-models__size">
-                {{ m.present ? `${m.size_mb} MB` : $t('settings.parser.doclingModelsMissing') }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p class="docling-models__meta">
-          {{ $t('settings.parser.doclingModelsUpdated') }} {{ doclingModels.updated || '—' }} · {{ doclingModels.dir }}
-        </p>
-        <p v-if="!doclingModels.available" class="docling-models__hint">
-          {{ $t('settings.parser.doclingModelsMissingHint') }}
-        </p>
-      </div>
-    </template>
+        </template>
       </t-alert>
     </div>
 
@@ -123,6 +92,37 @@
       </div>
 
     </template>
+
+    <!-- Docling 离线模型清单（只读，来自 /system/parser-engines/docling-models） -->
+    <div v-if="doclingModels" class="engine-card docling-models-card">
+      <div class="engine-card__header">
+        <h3 class="engine-card__title">{{ $t('settings.parser.doclingModelsTitle') }}</h3>
+        <span
+          class="engine-card__status"
+          :class="doclingModels.available ? 'engine-card__status--on' : 'engine-card__status--err'"
+        >
+          <span class="engine-card__status-dot" />
+          {{ doclingModels.available ? $t('settings.parser.doclingModelsReady') : $t('settings.parser.doclingModelsMissing') }}
+        </span>
+      </div>
+      <table class="docling-models__table">
+        <tbody>
+          <tr v-for="m in doclingModels.models" :key="m.name">
+            <td class="docling-models__name">{{ m.name }}</td>
+            <td class="docling-models__cat">{{ m.category }}</td>
+            <td class="docling-models__size">
+              {{ m.present ? `${m.size_mb} MB` : $t('settings.parser.doclingModelsMissing') }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="docling-models__meta">
+        {{ $t('settings.parser.doclingModelsUpdated') }} {{ doclingModels.updated || '—' }} · {{ doclingModels.dir }}
+      </p>
+      <p v-if="!doclingModels.available" class="docling-models__hint">
+        {{ $t('settings.parser.doclingModelsMissingHint') }}
+      </p>
+    </div>
 
     <!-- 配置抽屉 — 用 SettingDrawer 包装，保持与 ModelEditorDialog 同款视觉/交互 -->
     <SettingDrawer
@@ -1204,6 +1204,7 @@ onMounted(loadAll)
   background: rgba(98, 53, 187, 0.12);
   color: #6235BB;
 }
+</style>
 
 <style scoped>
 .docling-models-card {
@@ -1235,5 +1236,4 @@ onMounted(loadAll)
   font-size: 12px;
   color: var(--td-warning-color, #e37318);
 }
-</style>
 </style>
