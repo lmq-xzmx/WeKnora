@@ -34,6 +34,12 @@ fi
 REPOS="wechatopenai/weknora-app wechatopenai/weknora-ui wechatopenai/weknora-docreader wechatopenai/weknora-sandbox weknora-mcp"
 ACC='Accept: application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json'
 
+# 缺 curl 会让下面的判断全部失败（还不报错，最难查）——先明确检查
+command -v curl >/dev/null 2>&1 || {
+  echo "缺少 curl：docker:cli 镜像里没有，请在步骤里先 apk add --no-cache curl" >&2
+  exit 1
+}
+
 # registry 里有没有这个 tag 的清单
 manifest_exists() {
   code=$(curl -sS -o /dev/null -w '%{http_code}' -H "$ACC" "$REG/v2/$1/manifests/$2" || true)

@@ -44,6 +44,9 @@ steps:
       PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
       UV_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
     commands:
+      # docker:cli 镜像里没有 curl —— ci-release.sh 用它判断镜像是否已存在，
+      # 缺了会让复用判断永远失败、白白从零构建一遍
+      - apk add --no-cache curl
       - sh scripts/ci-release.sh
 
   # ── 滚动更新生产机 ────────────────────────────────────
