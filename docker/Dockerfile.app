@@ -178,18 +178,15 @@ RUN apt-get update && \
 RUN mkdir -p /home/appuser/.local/bin && \
     ( if [ -n "$UV_INDEX_URL_ARG" ]; then \
         # 有 pypi 镜像就直接走 pip：官方安装器要访问 releases.astral.sh，
-        # 那个地址从国内机器上不可达（实测会一直挂着，内层下载还没超时）
-        python3 -m pip install --break-system-packages --index-url="$UV_INDEX_URL_ARG" uv \
-        && ln -sf /home/appuser/.local/bin/uv /home/appuser/.local/bin/uvx ; \
+        # 那个地址从国内机器上不可达（实测 NAS 和 ECS 都拉不动，内层下载也没超时）
+        # uv 的 wheel 里带 uv / uvx 两个独立脚本，pip 会分别装到 /usr/local/bin，
+        # 不需要（也不能）再手动 ln —— uv 和 uvx 同源，ln 会报 "same file" 并返回 1。
+        python3 -m pip install --break-system-packages --index-url="$UV_INDEX_URL_ARG" uv ; \
       else \
         timeout 120 curl -LsSf --retry 3 --retry-delay 2 https://astral.sh/uv/install.sh -o /tmp/uv-install.sh \
         && CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh /tmp/uv-install.sh ; \
-      fi ) ; \
-    if [ -x /home/appuser/.local/bin/uvx ]; then \
-        ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx; \
-    else \
-        ln -sf "$(command -v uvx)" /usr/local/bin/uvx; \
-    fi && \
+      fi ) && \
+    ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx 2>/dev/null || true ; \
     chown -R appuser:appuser /home/appuser && \
     chmod +x /usr/local/bin/uvx
 

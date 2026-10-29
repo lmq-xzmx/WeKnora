@@ -85,7 +85,8 @@ build_app() {
       -t "$REG/wechatopenai/weknora-app:latest" \
       -f docker/Dockerfile.app .; then
     echo "!!! 构建失败：可能是国内镜像源未同步，去掉镜像参数用官方源重试一次"
-    USE_MIRROR=0
+    # ⚠️ 只清 M_APP（app 自己的镜像参数），不要动全局 USE_MIRROR ——
+    #    否则后面几个镜像的 apt 也会退回官方源，白白再等一小时
     M_APP=""
     docker build \
       --build-arg GOPROXY_ARG="${GOPROXY_ARG:-https://goproxy.cn,direct}" \
