@@ -235,8 +235,13 @@ services:
       #   容器里实际生效的是 S3_BUCKET_NAME=your-bucket-name（WeKnora 镜像
       #   自带的 ENV），MINIO_BUCKET_NAME 则是空 —— 也就是说生产上 WeKnora
       #   的知识库原件会落到一个叫 "your-bucket-name" 的默认桶里。
-      #   现在把 MINIO 侧的桶名钉死成 weknora-files。
-      - MINIO_BUCKET_NAME=weknora-files
+      #   现在把 MINIO 侧的桶名**钉死成 weknora-files（默认值）**。
+      # ⚠️ 2026-11-06 改为「变量 + 默认值」而不是纯硬编码：
+      #   纯硬编码 weknora-files 会让**开发机**（桶名 zhongkejubucket，
+      #   且没有 weknora-files 桶）一起容器后写进空桶 → 原件"人间蒸发"。
+      #   变量形式让各机用自己的 .env 决定桶名，同时默认值仍防住
+      #   "落回镜像内置 your-bucket-name" 那个原始 bug。
+      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-weknora-files}
       - MINIO_PATH_PREFIX=${MINIO_PATH_PREFIX:-}
       - MINIO_USE_SSL=false
       # ----- 火山引擎 TOS（STORAGE_TYPE=tos）-----
@@ -254,11 +259,14 @@ services:
       #   path-style 关（MinIO 必须 path-style），SSL 却开着。
       #   ⚠️ compose 列表里**同名键后者覆盖前者** —— 必须改这一处，
       #   另加一份会被下面原有的同名项覆盖掉（踩过一次）。
+      # ⚠️ 2026-11-06 桶名同样改「变量 + 默认值」，并**从 MINIO_BUCKET_NAME
+      #   继承**（嵌套默认值 compose v2 支持），这样一个变量管两个键，
+      #   各机只在自己的 .env 里设一次 MINIO_BUCKET_NAME 即可。
       - S3_ENDPOINT=http://minio:9000
       - S3_REGION=${S3_REGION:-}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
       - S3_SECRET_KEY=${S3_SECRET_KEY:-}
-      - S3_BUCKET_NAME=weknora-files
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-${MINIO_BUCKET_NAME:-weknora-files}}
       - S3_PATH_PREFIX=${S3_PATH_PREFIX:-weknora/}
       - S3_USE_SSL=false
       - S3_FORCE_PATH_STYLE=true
