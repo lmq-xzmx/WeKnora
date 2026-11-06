@@ -100,9 +100,14 @@ type StorageBackendConfig struct {
 	BucketName      string `json:"bucket_name,omitempty"`
 	PathPrefix      string `json:"path_prefix,omitempty"`
 	AppID           string `json:"app_id,omitempty"`
-	UseSSL          bool   `json:"use_ssl,omitempty"`
-	ForcePathStyle  bool   `json:"force_path_style,omitempty"`
-	UseTempBucket   bool   `json:"use_temp_bucket,omitempty"`
+	// UseSSL / ForcePathStyle / UseTempBucket 是 **bool，false 是有意义的值**
+	// （MinIO 走明文 http、S3 兼容端点不用 path-style 都是常态），
+	// 不能带 omitempty —— 否则 false 落库时被丢弃，回读缺键→零值 false，
+	// 前端 `{ ...blankConfig(), ...config }` 拿默认 true 覆盖 → 显示与实际相反
+	// （2026-11-06 生产实例踩过：关掉「使用 HTTPS」保存后刷新又变回打开）。
+	UseSSL          bool   `json:"use_ssl"`
+	ForcePathStyle  bool   `json:"force_path_style"`
+	UseTempBucket   bool   `json:"use_temp_bucket"`
 	TempBucketName  string `json:"temp_bucket_name,omitempty"`
 	TempRegion      string `json:"temp_region,omitempty"`
 }

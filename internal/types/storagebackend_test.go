@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -57,4 +58,31 @@ func TestStorageBackendRejectsTraversingPathPrefix(t *testing.T) {
 		Config: StorageBackendConfig{PathPrefix: "../outside"},
 	}
 	require.Error(t, backend.Validate())
+}
+
+// 2026-11-06 生产实例回归：UseSSL=false 必须能原样往返。
+// 曾因 `json:"use_ssl,omitempty"` 把 false 丢掉 → 落库缺键 → 前端用
+// blankConfig() 的默认 true 覆盖 → 显示「使用 HTTPS」与实际（http）相反。
+func TestStorageBackendConfigKeepsFalseBooleans(t *testing.T) {
+	raw, err := json.Marshal(StorageBackendConfig{
+		Mode: "remote", Endpoint: "minio:9000", BucketName: "weknora-files",
+		UseSSL: false, ForcePathStyle: false, UseTempBucket: false,
+	})
+	require.NoError(t, err)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	for _, k := range []string{"use_ssl", "force_path_style", "use_temp_bucket"} {
+		// 键必须在（不是被 omitempty 丢掉），且值为 false
+		v, ok := decoded[k]
+		require.True(t, ok, "字段 %s 被 omitempty 丢掉了", k)
+		assert.Equal(t, false, v, "字段 %s 的 false 语义丢失", k)
+	}
+
+	// 完整往返：反序列化后仍是 false（不是零值缺失导致的歧义）
+	var back StorageBackendConfig
+	require.NoError(t, json.Unmarshal(raw, &back))
+	assert.False(t, back.UseSSL)
+	assert.False(t, back.ForcePathStyle)
+	assert.False(t, back.UseTempBucket)
 }
