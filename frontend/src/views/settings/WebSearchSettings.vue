@@ -211,9 +211,21 @@
 
           <div v-if="selectedProviderType?.requires_base_url" class="form-item">
             <label class="form-label required">{{ t('webSearchSettings.baseUrlLabel') }}</label>
-            <t-input
+            <!--
+              base_url 改成「可搜索下拉 + 可手填」：
+              容器化部署时地址是固定的内网域名（compose 网络里的容器名），
+              让用户从下拉里选比默背地址靠谱；但自建实例地址千变万化，
+              所以用 creatable 让人直接敲 —— TDesign 的 Select 没有
+              allow-input（那是 Element Plus 的写法），filterable+creatable
+              才是「能选也能敲」的组合。
+            -->
+            <t-select
               v-model="providerForm.parameters.base_url"
               :placeholder="t('webSearchSettings.baseUrlPlaceholder')"
+              filterable
+              creatable
+              clearable
+              :options="searxngBaseUrlOptions"
             />
           </div>
 
@@ -340,6 +352,18 @@ const confirmDelete = useConfirmDelete()
 // ===== State =====
 const providerEntities = ref<WebSearchProviderEntity[]>([])
 const providerTypes = ref<WebSearchProviderTypeInfo[]>([])
+
+// SearXNG 实例地址的候选下拉。
+//
+// 首选值是 compose 网络里的容器名：http://searxng:8080
+//   —— app 与 searxng 在同一个 compose 网络，走容器名是 bridge 内的直连
+//      （实测 ~3-5ms），且不经过宿主端口映射。
+// 为什么不给宿主映射口（如 host.docker.internal:3028）：宿主口只绑 127.0.0.1，
+//   容器访问宿主回环不通（实测 http=000），给出来只会让人踩坑。
+// 其余自建实例地址千变万化，所以下拉是 allow-input 的 —— 可以直接手填。
+const searxngBaseUrlOptions = [
+  { label: 'http://searxng:8080（compose 内网，推荐）', value: 'http://searxng:8080' },
+]
 const showAddProviderDialog = ref(false)
 const editingProvider = ref<WebSearchProviderEntity | null>(null)
 const testing = ref(false)
