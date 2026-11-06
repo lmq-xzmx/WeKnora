@@ -24,3 +24,20 @@ services:
       OIDC_AUTH_DISCOVERY_URL: http://36.212.140.68:3012/.well-known/openid-configuration
       OIDC_AUTH_ISSUER_URL: http://36.212.140.68:3012
       SSRF_WHITELIST_EXTRA: 36.212.140.68,36.140.179.34,minio
+
+  # MinIO 数据目录从 named volume 搬到宿主可见路径（2026-10-29）
+  #
+  # 为什么搬：named volume 的真实数据藏在 Docker Desktop 的 Docker.raw 里
+  # （名义 200 GiB 的稀疏文件）—— 看不见、删不掉、还占本机磁盘。
+  # 一次 `docker system prune -a --volumes` 就能把对象存储连同 PG/Redis 一起清空。
+  # 搬到 ~/data/minio 后：数据一眼可见、可直接备份、可整体迁移。
+  #
+  # !override 用来「替换」基础 compose.yml 里的 `volumes: [minio_data:/data]` ——
+  # compose 默认对 volumes 列表做合并，不加 !override 会变成两个挂载点冲突。
+  #
+  # 注意：PG / Redis / Qdrant 仍留在 named volume —— 它们的 fsync 密集负载在
+  # macOS Docker Desktop 的 bind mount（virtiofs）上会明显变慢；那部分的安全性靠
+  # ~/.claude/hooks/guard-docker-data.sh 护栏保证，不靠搬家。
+  minio:
+    volumes: !override
+      - ${GEO_DATA_ROOT:-/Users/xzmx/data}/minio:/data
