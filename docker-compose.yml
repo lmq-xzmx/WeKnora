@@ -620,7 +620,10 @@ services:
     container_name: WeKnora-searxng-init
     command: ["sh", "-c", "cp /template/settings.yml /etc/searxng/settings.yml && chmod 0644 /etc/searxng/settings.yml"]
     volumes:
-      - ./docker/searxng/settings.yml:/template/settings.yml:ro
+      # SEARXNG_SETTINGS_FILE 可切换地区变体：中国网络环境用
+      # ./docker/searxng/settings.cn.yml（启用 bing/360search/quark，关掉必超时的
+      # 墙外引擎）。海外部署保持默认即可。
+      - ${SEARXNG_SETTINGS_FILE:-./docker/searxng/settings.yml}:/template/settings.yml:ro
       - searxng_config:/etc/searxng
     restart: "no"
     networks:
