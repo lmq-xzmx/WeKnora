@@ -231,9 +231,14 @@ services:
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - MINIO_ACCESS_KEY_ID=${MINIO_ACCESS_KEY_ID:-minioadmin}
       - MINIO_SECRET_ACCESS_KEY=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
-      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-}
+      # ⚠️ 2026-10-31 修正（此前桶名用的是**镜像内置默认值**）：
+      #   容器里实际生效的是 S3_BUCKET_NAME=your-bucket-name（WeKnora 镜像
+      #   自带的 ENV），MINIO_BUCKET_NAME 则是空 —— 也就是说生产上 WeKnora
+      #   的知识库原件会落到一个叫 "your-bucket-name" 的默认桶里。
+      #   现在把 MINIO 侧的桶名钉死成 weknora-files。
+      - MINIO_BUCKET_NAME=weknora-files
       - MINIO_PATH_PREFIX=${MINIO_PATH_PREFIX:-}
-      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
+      - MINIO_USE_SSL=false
       # ----- 火山引擎 TOS（STORAGE_TYPE=tos）-----
       - TOS_ENDPOINT=${TOS_ENDPOINT:-}
       - TOS_REGION=${TOS_REGION:-}
@@ -244,14 +249,19 @@ services:
       - TOS_TEMP_BUCKET_NAME=${TOS_TEMP_BUCKET_NAME:-}
       - TOS_TEMP_REGION=${TOS_TEMP_REGION:-}
       # ----- AWS S3（STORAGE_TYPE=s3）-----
-      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      # ⚠️ 2026-10-31 钉死（原来走 ${VAR:-} → 落回空值/镜像默认值）：
+      #   桶名之前实际生效的是镜像内置的 your-bucket-name，endpoint 空、
+      #   path-style 关（MinIO 必须 path-style），SSL 却开着。
+      #   ⚠️ compose 列表里**同名键后者覆盖前者** —— 必须改这一处，
+      #   另加一份会被下面原有的同名项覆盖掉（踩过一次）。
+      - S3_ENDPOINT=http://minio:9000
       - S3_REGION=${S3_REGION:-}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
       - S3_SECRET_KEY=${S3_SECRET_KEY:-}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - S3_BUCKET_NAME=weknora-files
       - S3_PATH_PREFIX=${S3_PATH_PREFIX:-weknora/}
-      - S3_USE_SSL=${S3_USE_SSL:-true}
-      - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-false}
+      - S3_USE_SSL=false
+      - S3_FORCE_PATH_STYLE=true
       # ----- 华为云 OBS（STORAGE_TYPE=obs）-----
       - OBS_ENDPOINT=${OBS_ENDPOINT:-}
       - OBS_REGION=${OBS_REGION:-}
@@ -532,6 +542,42 @@ services:
   postgres:
     image: 100.108.142.49:5000/paradedb/paradedb:v0.22.6-pg17
     container_name: WeKnora-postgres
+    # ⚠️ 2026-10-31 参数调优（这个实例装着 7 个业务库：
+    #    geo_knowledge / geo_flow / geo_monitor / geo_media_hub / WeKnora /
+    #    langfuse / paradedb，共用一套 shared_buffers 与 max_connections）
+    #
+    #   原值全是"最小安装"级别的：shared_buffers=160MB、max_connections=100、
+    #   **statement_timeout=0（无限制）**。
+    #
+    #   statement_timeout=0 的风险：一个慢查询能占着连接无限跑，
+    #   而连接池是 7 个库共享的 —— 单个业务的集中作业会拖累其余 6 个。
+    #   这是"共享实例"真正的性能风险点（不是吞吐，是相互拖累）。
+    #
+    #   300s 是保守值：既够跑完批量导入，又能兜住跑飞的查询。
+    command:
+      - postgres
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - effective_cache_size=8GB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=150
+      - -c
+      - max_worker_processes=12
+      - -c
+      - statement_timeout=300s
+      - -c
+      - idle_in_transaction_session_timeout=60s
+      # 超过 1 秒的语句记日志 —— 慢查询可见（之前完全看不见）
+      - -c
+      - log_min_duration_statement=1000
+      # SSD 随机读代价更接近 1（默认 4 是机械盘假设）
+      - -c
+      - random_page_cost=1.1
     ports:
       - "5433:5432"
     environment:
@@ -570,18 +616,21 @@ services:
   # repo file directly would write the resolved SEARXNG_SECRET back into the
   # working tree (and prevent re-templating on subsequent restarts).
   searxng-init:
-    image: 100.108.142.49:5000/busybox:1.36
+    image: ${BUSYBOX_IMAGE:-docker.m.daocloud.io/library/busybox:1.36}
     container_name: WeKnora-searxng-init
     command: ["sh", "-c", "cp /template/settings.yml /etc/searxng/settings.yml && chmod 0644 /etc/searxng/settings.yml"]
     volumes:
-      - ./docker/searxng/settings.yml:/template/settings.yml:ro
+      # SEARXNG_SETTINGS_FILE 可切换地区变体：中国网络环境用
+      # ./docker/searxng/settings.cn.yml（启用 bing/360search/quark，关掉必超时的
+      # 墙外引擎）。海外部署保持默认即可。
+      - ${SEARXNG_SETTINGS_FILE:-./docker/searxng/settings.yml}:/template/settings.yml:ro
       - searxng_config:/etc/searxng
     restart: "no"
     networks:
       - weknora-network
 
   searxng:
-    image: 100.108.142.49:5000/searxng/searxng:latest
+    image: ${SEARXNG_IMAGE:-docker.m.daocloud.io/searxng/searxng:latest}
     container_name: WeKnora-searxng
     # Bind to loopback by default; override SEARXNG_BIND=0.0.0.0 only after
     # rotating SEARXNG_SECRET and (optionally) re-enabling limiter in settings.yml.
@@ -613,9 +662,22 @@ services:
   minio:
     image: 100.108.142.49:5000/minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: WeKnora-minio
+    # ⚠️ 2026-10-31 端口收紧（三个地址各司其职）：
+    #   127.0.0.1  → 本机管理（SSH 隧道看控制台走这个）
+    #   172.17.0.1  → **容器通过 host.docker.internal 访问**
+    #                AI-Media-Hub 与 GEO-Flow 的 STORAGE_ENDPOINT 都是这个地址
+    #                （它们在 geo-platform 编排的网络里，解析不到 weknora
+    #                 网络里的 minio 容器名，只能走 host-gateway）
+    #   公网        → **不绑**（36.212.140.68 是 NAT 到内网网卡，
+    #                 不绑 0.0.0.0 就从公网不可达 ✅）
+    #
+    # ⚠️ 踩过的坑：**只绑 127.0.0.1 会打断 AH 与 GEO-Flow 的对象存储访问**
+    #    （host.docker.internal:9000 超时 → ConnectTimeoutError）。
+    #    那次从外部看"端口已收紧"的假象 —— 代价是内部全断。
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "172.17.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY_ID:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
@@ -656,8 +718,8 @@ services:
     image: 100.108.142.49:5000/qdrant/qdrant:v1.16.2
     container_name: WeKnora-qdrant
     ports:
-      - "${QDRANT_REST_PORT:-6333}:6333"
-      - "${QDRANT_PORT:-6334}:6334"
+      - "127.0.0.1:${QDRANT_REST_PORT:-6333}:6333"
+      - "127.0.0.1:${QDRANT_PORT:-6334}:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
@@ -712,7 +774,8 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # Apache Doris 4.1（FE + BE 单实例 standalone 部署，opt-in via `--profile doris`）
+    # 2026-10-31：milvus 标成 opt-in（详见 apply-compose-patch.py 的说明）
+    profiles: ["optional"]  # Apache Doris 4.1（FE + BE 单实例 standalone 部署，opt-in via `--profile doris`）
   #
   # 版本要求：必须 >= 3.0（HNSW ANN 索引、cosine_distance_approximate、
   # Stream Load partial_columns）。本 compose 使用 4.1 官方稳定 tag。
@@ -765,6 +828,11 @@ services:
     restart: unless-stopped
 
   dex:
+    # 2026-10-31：dex 的配置是纯开发环境的（issuer/redirectURIs 指向
+    # 127.0.0.1:5556 与 127.0.0.1:5173 的 vite dev）。当前开发环境的
+    # WeKnora OIDC 走 Casdoor(5011)，dex 无客户端连接 → 标成 opt-in。
+    # 需要时：docker compose --profile optional up -d dex
+    profiles: ["optional"]
     image: 100.108.142.49:5000/dexidp/dex:latest
     container_name: dex
     ports:

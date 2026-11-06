@@ -42,8 +42,48 @@ search:
     - json
 
 outgoing:
-  request_timeout: 6.0
+  request_timeout: 8.0
   max_request_timeout: 10.0
   pool_connections: 100
   pool_maxsize: 20
   enable_http2: true
+
+# ── 引擎开关 ──
+# searxng 上游默认把 google / bing / 百度 / 搜狗 等引擎全部 disabled，
+# 而本机在墙内，留着的 brave / duckduckgo / wikipedia / wikidata 又全部 timeout，
+# 结果是 search 一个结果都返回不了（unresponsive_engines 全是墙外引擎）。
+# 这里显式启用国内可达的引擎，并关掉必然超时的墙外引擎。
+engines:
+  # 启用：国内可达
+  - name: bing
+    disabled: false
+  - name: 360search
+    disabled: false
+  - name: quark
+    disabled: false
+  # 不可用：百度对 scraper 返 CAPTCHA（会挂起整次查询），搜狗本机 timeout
+  - name: baidu
+    disabled: true
+  - name: sogou
+    disabled: true
+  # 禁用：本机出不去，只会拖慢查询并刷 timeout 告警
+  - name: brave
+    disabled: true
+  - name: duckduckgo
+    disabled: true
+  - name: google
+    disabled: true
+  - name: google cse
+    disabled: true
+  - name: google images
+    disabled: true
+  - name: google news
+    disabled: true
+  - name: google videos
+    disabled: true
+  - name: google scholar
+    disabled: true
+  - name: wikipedia
+    disabled: true
+  - name: wikidata
+    disabled: true

@@ -1,29 +1,46 @@
 builtin_models:
-  # BGE-M3 remote embedding service (768 dimension)
+  # BGE-M3 remote embedding service (1024 dimension)
+  #
+  # 命名规范（互备池三机部署后引入）：name 带 @设备名 = 该条目主用的机器；
+  # 网关故障切换时实际服务的机器看响应头 X-Geo-Backend（127.0.0.1=本机，100.x=切到对端）。
+  # name 只是显示名/DB 记录名，wire 上的 model 参数走 spec 引用，改名不影响调用。
+  #
+  # 维度必须与服务实际返回的向量长度一致：BGE-M3 原生就是 1024 维。
+  # 写错的后果不是「报错」而是「静默按实际维度存向量」——服务端会忽略请求里的
+  # dimensions 参数，库里存 1024 维，但模型元数据写着别的数，
+  # 于是 validateQueryEmbeddingDimension 这道漂移检测会误报（期望 != 实际）。
   - id: builtin-bge-m3
     type: Embedding
     source: remote
     is_default: true
-    name: bge-m3
+    name: bge-m3@geo-457
     parameters:
-      base_url: http://36.140.179.34:3081
-      api_key: ""
+      # 模型服务池网关（457/881/434 三机互备，Tailscale；调用方只连本机网关 308x，
+      # 见 项目整合/geo相关项目整合/过程件/05-部署与基础设施/ops/model-services/README.md）。
+      # 开发机（Mac）无本地 bge → 指向 457 网关；生产机各指本机网关。
+      # IP 直连需在 .env 的 SSRF_WHITELIST 放行。
+      base_url: http://100.96.230.105:3081
+      api_key: ${MODEL_POOL_BGE_KEY}
       provider: generic
       interface_type: openai
       embedding_parameters:
-        dimension: 768
+        dimension: 1024
         truncate_prompt_tokens: 8192
 
-  # BGE-Reranker (重排序服务)
+  # BGE-Reranker (重排序服务，池实测版本 bge-reranker-v2-m3)
   - id: builtin-bge-rerank
     type: Rerank
     source: remote
     is_default: false
-    name: bge-reranker
+    name: bge-reranker-v2-m3@geo-457
     parameters:
-      base_url: http://36.140.179.34:3082
-      api_key: ""
+      base_url: http://100.96.230.105:3082
+      api_key: ${MODEL_POOL_BGE_KEY}
       provider: generic
+      # 池网关回传原始 logit（v2-m3 相关性头），需要 sigmoid 归一化到 0..1，
+      # 否则复合打分为负、全部低于阈值（resolveRerank 读 extra_config）。
+      extra_config:
+        score_scale: logit
 
   # Ollama local embedding (可选，本地备选)
   - id: builtin-ollama-embedding

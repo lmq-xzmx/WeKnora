@@ -372,6 +372,11 @@ services:
     restart: unless-stopped
 
   dex:
+    # 2026-10-31：dex 的配置是纯开发环境的（issuer/redirectURIs 指向
+    # 127.0.0.1:5556 与 127.0.0.1:5173 的 vite dev）。当前开发环境的
+    # WeKnora OIDC 走 Casdoor(5011)，dex 无客户端连接 → 标成 opt-in。
+    # 需要时：docker compose --profile optional up -d dex
+    profiles: ["optional"]
     image: dexidp/dex:v2.43.1
     container_name: 小炬人-dex-dev
     ports:

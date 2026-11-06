@@ -334,7 +334,7 @@ async function load() {
 }
 function resetConfig() { form.config = blankConfig(); rawTestResult.value = null }
 function openCreate() { editing.value = null; form.name = ''; form.provider = providers.value[0] || 'local'; form.config = blankConfig(); rawTestResult.value = null; visible.value = true }
-function openEdit(backend: StorageBackend) { editing.value = backend; form.name = backend.name; form.provider = backend.provider; form.config = { ...blankConfig(), ...backend.config }; rawTestResult.value = null; visible.value = true }
+function openEdit(backend: StorageBackend) { editing.value = backend; form.name = backend.name; form.provider = backend.provider; form.config = { ...blankConfig(), ...backend.config, use_ssl: backend.config.use_ssl ?? false }; rawTestResult.value = null; visible.value = true }
 async function testRaw() {
   testing.value = true
   rawTestResult.value = null
