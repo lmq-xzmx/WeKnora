@@ -73,12 +73,16 @@ func TestSkillPythonVerifier(t *testing.T) {
 		wantProblem: "scripts/bad.py has a syntax error",
 		wantExit:    1,
 	}, {
+		// The package name must be one no environment carries. pandas was
+		// tried first and quietly passes on a machine that happens to have
+		// pandas installed — the case then asserts the opposite of what it
+		// means to pin.
 		name: "a requirement the venv does not carry",
 		files: map[string]string{
-			"requirements.txt": "# pinned\npandas==3.0.1\n-r other.txt\n",
+			"requirements.txt": "# pinned\ntotally_absent_package==1.0.0\n-r other.txt\n",
 			"scripts/run.py":   "x = 1\n",
 		},
-		wantProblem: "requirements.txt declares pandas but it is not installed",
+		wantProblem: "requirements.txt declares totally_absent_package but it is not installed",
 		wantExit:    2,
 	}, {
 		// pip skips a line whose marker is false here, so refusing the install

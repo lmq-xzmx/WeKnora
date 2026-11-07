@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -219,11 +220,13 @@ func TestUpdateManualKnowledge_NotifiesGEOK_Publish(t *testing.T) {
 	require.Contains(t, payloads[0].Content, "发布的正文")
 }
 
-// TestUpdateManualKnowledge_NotifiesGEOK_Signed 通知必须带签名。
+// TestUpdateManualKnowledge_NotifiesGEOK_Signed 通知必须带 HMAC 签名。
 //
 // GEO-K 侧是 fail-closed 验签的：没签名头一律 401。
 // 少了签名头，通知会被 GEO-K 全量拒收 —— 症状是「WeKnora 明明改了，
-// GEO-K 就是没反应」。
+// GEO-K 就是没反应」。签名头是 X-Webhook-Signature（sha256=<HMAC hex>），
+// 与三系统互调、平台回调同一套口径；旧的 X-Webhook-Secret + 裸 hex
+// 已废弃，这里断言新格式，防止实现悄悄退回去。
 func TestUpdateManualKnowledge_NotifiesGEOK_Signed(t *testing.T) {
 	f := newManualWebhookFixture(t)
 	f.svc.geoKWebhook = geoknowledge.NewClient(&config.GEOKnowledgeWebhookConfig{
@@ -244,6 +247,8 @@ func TestUpdateManualKnowledge_NotifiesGEOK_Signed(t *testing.T) {
 	f.capture.mu.Lock()
 	defer f.capture.mu.Unlock()
 	require.NotEmpty(t, f.capture.headers, "没收到任何请求")
-	sig := f.capture.headers[0].Get("X-Webhook-Secret")
-	require.NotEmpty(t, sig, "通知必须带 X-Webhook-Secret 签名头，否则 GEO-K 会全量 401")
+	sig := f.capture.headers[0].Get("X-Webhook-Signature")
+	require.NotEmpty(t, sig, "通知必须带 X-Webhook-Signature 签名头，否则 GEO-K 会全量 401")
+	require.True(t, strings.HasPrefix(sig, "sha256="),
+		"签名格式应为 sha256=<hex>，实际: "+sig)
 }
