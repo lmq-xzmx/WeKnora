@@ -65,24 +65,30 @@ deploy() {
   # 多行嵌进 ssh 的双引号里，展开后的换行与 && 会被 sh 解析成
   # 「空命令 && ...」，语法直接断。分开反而更好排查：钉版本失败就不往下走。
   if [ -n "$pin" ]; then
-    ssh $SSH_OPTS "root@$addr" "cd $dir && \
+    if ! ssh $SSH_OPTS "root@$addr" "cd $dir && \
       cp -a .env .env.bak-\$(date +%F-%H%M) && \
       for k in WEKNORA_VERSION FRONTEND_VERSION SANDBOX_VERSION DOCREADER_VERSION; do \
         if grep -q \"^\$k=\" .env; then \
           sed -i.bak \"s|^\$k=.*|\$k=$pin|\" .env && rm -f .env.bak; \
         fi; \
       done && \
-      grep -E '^(WEKNORA|FRONTEND|SANDBOX|DOCREADER)_VERSION=' .env"
+      grep -E '^(WEKNORA|FRONTEND|SANDBOX|DOCREADER)_VERSION=' .env"; then
+      echo "!!! $name 钉版本失败（SSH 连不上或 .env 改不动）" >&2
+      return 1
+    fi
   fi
 
   # 远端自己判断用哪个 compose 命令（v1 / v2 都支持）
-  ssh $SSH_OPTS "root@$addr" "cd $dir && \
+  if ! ssh $SSH_OPTS "root@$addr" "cd $dir && \
     if command -v docker-compose >/dev/null 2>&1; then \
       C='docker-compose'; \
     else \
       C='docker compose'; \
     fi && \
-    \$C pull && \$C up -d"
+    \$C pull && \$C up -d"; then
+    echo "!!! $name 部署失败（compose pull/up 出错）" >&2
+    return 1
+  fi
   echo "--- $name 部署完成"
 }
 
@@ -96,12 +102,25 @@ EOF
 
 # 注意：这里用 here-doc 而不是管道，避免 while 循环跑在子 shell 里
 # （子 shell 的失败退出码不会让 set -e 生效，部署失败会被悄悄吞掉）
+#
+# ⚠️ 一台机器失败**不能**中断后面的机器：三台是各自独立的发布单元，
+#    某台 SSH 不通（比如新机器还没配 CI 公钥）不代表别的机器也该跳过。
+#    所以逐台捕获失败，最后统一汇总并以非零码退出（让流水线如实标红）。
+FAILED=""
 while IFS='|' read -r n a d p; do
   [ -z "$n" ] && continue
-  deploy "$n" "$a" "$d" "$p"
+  if deploy "$n" "$a" "$d" "$p"; then
+    :
+  else
+    FAILED="$FAILED $n"
+  fi
 done <<EOF
 $HOSTS
 EOF
 
 echo ""
+if [ -n "$FAILED" ]; then
+  echo "!!! 以下机器部署失败：$FAILED" >&2
+  exit 1
+fi
 echo "=== 全部部署完成 ==="
