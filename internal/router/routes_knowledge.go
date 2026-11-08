@@ -273,8 +273,13 @@ func RegisterKBMaintenanceRoutes(
 		// 预估成本 — 只读，不写任何数据
 		kb.POST("/plan", g.Contributor(), g.OwnedKBOrAdmin(), g.KBAccessWrite("id"),
 			maintenanceHandler.PlanMaintenance)
-		// 执行回填 — 会写入向量行
-		kb.POST("/run", g.Contributor(), g.OwnedKBOrAdmin(), g.KBAccessWrite("id"),
+		// 执行回填 — 会写入向量行、消耗 embedding 配额。
+		// ⚠️ API key 的授权完全由 APIKeyGate 的策略决定（角色阶梯对机器主体不生效），
+		//    所以这一条必须单独收紧：只读能力（retrieve）不能触发写操作，
+		//    否则一把只读的检索钥匙就能在生产上跑回填、烧配额。
+		//    要求 manage_kbs（或全权钥匙），与「管理知识库生命周期」同档。
+		kb.With(apiKeyManageKnowledgeBases(apiKeyFullAccess())).POST("/run",
+			g.Contributor(), g.OwnedKBOrAdmin(), g.KBAccessWrite("id"),
 			maintenanceHandler.RunMaintenance)
 		// 查询运行记录 — 只读
 		kb.GET("/runs", g.Contributor(), g.OwnedKBOrAdmin(), g.KBAccessWrite("id"),

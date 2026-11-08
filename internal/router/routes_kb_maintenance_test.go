@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/handler"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -66,5 +67,41 @@ func TestKBMaintenanceRoutesRequireFullAccess(t *testing.T) {
 				t.Fatal("policy should require full access without a matching capability")
 			}
 		})
+	}
+}
+
+// TestKBMaintenanceRunRouteNeedsWriteCapability pins that the write route
+// (/run) is gated behind a write-capable key (manage_kbs), not behind the
+// read-only retrieve capability.
+//
+// Why: API-key principals are authorized *solely* by the APIKeyGate policy
+// (the JWT role ladder does not apply to a machine principal — see
+// middleware.RequireRole). So the policy IS the only thing standing between
+// a read-only integration key and a backfill that writes embedding rows and
+// burns the tenant's embedding quota. /run must therefore be unreachable
+// with retrieve alone, while /plan (a pure read) may keep it.
+func TestKBMaintenanceRunRouteNeedsWriteCapability(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	g := &rbacGuards{}
+	v1 := gin.New().Group("/api/v1")
+
+	RegisterKBMaintenanceRoutes(v1, &handler.KBMaintenanceHandler{}, g)
+
+	run := mustLookupAPIKeyPolicy(t, g, http.MethodPost,
+		"/api/v1/knowledge-bases/:id/maintenance/run")
+	if !policyHasCapability(run, types.APIKeyCapabilityManageKnowledgeBases) {
+		t.Fatalf("run policy capabilities = %v, want %s",
+			run.Capabilities, types.APIKeyCapabilityManageKnowledgeBases)
+	}
+	if policyHasCapability(run, types.APIKeyCapabilityRetrieve) {
+		t.Fatalf("run policy must not accept the read-only %s capability: %v",
+			types.APIKeyCapabilityRetrieve, run.Capabilities)
+	}
+
+	plan := mustLookupAPIKeyPolicy(t, g, http.MethodPost,
+		"/api/v1/knowledge-bases/:id/maintenance/plan")
+	if !policyHasCapability(plan, types.APIKeyCapabilityRetrieve) {
+		t.Fatalf("plan policy capabilities = %v, want %s",
+			plan.Capabilities, types.APIKeyCapabilityRetrieve)
 	}
 }
