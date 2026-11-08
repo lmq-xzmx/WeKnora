@@ -189,20 +189,31 @@ want() {
   return 0
 }
 
+# explicit：REPOS_TO_BUILD 里**点名的仓库无视路径裁剪**，一律要构建。
+#
+# 为什么必须这样：发布时生产机的 .env 被钉在 commit SHA 上，
+# `compose pull` 会按 SHA 拉**每一个** compose 里引用的镜像。
+# 只要少一个镜像的该 SHA tag，那台机器的 pull 就失败、整台发布失败。
+# 所以「本次没改这个仓库的源码」不能作为「不构建它」的理由 ——
+# 复用旧代码可以，但必须把旧代码重新打成这个 SHA 的镜像。
+explicit() { [ -n "$REPOS_TO_BUILD" ] && want "$1"; }
+
 # 核心镜像：每次都构建
 if want wechatopenai/weknora-app; then build_app; fi
 if want wechatopenai/weknora-ui; then build_ui; fi
 
 # 低频镜像：只在相关源码变更时构建（装依赖很慢，日常提交不必等）
 if want wechatopenai/weknora-docreader \
-   && { changed_prefix "docreader/" || changed_file "docker/Dockerfile.docreader"; }; then
+   && { explicit wechatopenai/weknora-docreader \
+        || changed_prefix "docreader/" || changed_file "docker/Dockerfile.docreader"; }; then
   build_docreader
 elif want wechatopenai/weknora-docreader; then
   echo "--- 跳过 weknora-docreader（本次未变更相关文件）"
 fi
 
 if want wechatopenai/weknora-sandbox \
-   && { changed_file "docker/Dockerfile.sandbox" \
+   && { explicit wechatopenai/weknora-sandbox \
+        || changed_file "docker/Dockerfile.sandbox" \
         || changed_file "scripts/build_browserskill.sh" \
         || changed_file "scripts/browserskill-release.json"; }; then
   build_sandbox
@@ -210,7 +221,7 @@ elif want wechatopenai/weknora-sandbox; then
   echo "--- 跳过 weknora-sandbox（本次未变更相关文件）"
 fi
 
-if want weknora-mcp && changed_prefix "mcp-server/"; then
+if want weknora-mcp && { explicit weknora-mcp || changed_prefix "mcp-server/"; }; then
   build_mcp
 elif want weknora-mcp; then
   echo "--- 跳过 weknora-mcp（本次未变更相关文件）"

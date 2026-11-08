@@ -40,9 +40,35 @@ command -v curl >/dev/null 2>&1 || {
   exit 1
 }
 
+# registry 开了 Basic 认证（htpasswd 保护全部仓库，匿名访问一律 401）。
+#
+# ⚠️ curl **不会**读 /root/.docker/config.json —— 裸 curl 查 manifest 必然 401，
+# 于是 manifest_exists 对每个仓库都返回「不存在」，复用判断把
+# 「所有镜像都没有」当成事实，白白从零构建一遍（多等一小时，还多占构建机磁盘）。
+#
+# 凭据从宿主注入的 config.json 里取 auth 字段（base64(user:pass)），
+# 直接当 Authorization 头用：不解码、不落盘、不回显。
+# 拿不到凭据就退回裸 curl（结果 401 → 走从零构建，功能上仍然正确，只是慢）。
+AUTH_HEADER=""
+cfg="${DOCKER_CONFIG:-/root/.docker}/config.json"
+if [ -f "$cfg" ]; then
+  b64=$(tr -d ' \t\n\r' < "$cfg" | sed -n "s|.*\"$REG\"[^}]*\"auth\":\"\\([^\"]*\\)\".*|\\1|p")
+  if [ -n "$b64" ]; then
+    AUTH_HEADER="Authorization: Basic $b64"
+  else
+    echo "⚠️  $cfg 里没有 $REG 的凭据，manifest 查询会 401" >&2
+  fi
+else
+  echo "⚠️  找不到 $cfg，manifest 查询会 401" >&2
+fi
+
 # registry 里有没有这个 tag 的清单
 manifest_exists() {
-  code=$(curl -sS -o /dev/null -w '%{http_code}' -H "$ACC" "$REG/v2/$1/manifests/$2" || true)
+  if [ -n "$AUTH_HEADER" ]; then
+    code=$(curl -sS -o /dev/null -w '%{http_code}' -H "$ACC" -H "$AUTH_HEADER" "$REG/v2/$1/manifests/$2" || true)
+  else
+    code=$(curl -sS -o /dev/null -w '%{http_code}' -H "$ACC" "$REG/v2/$1/manifests/$2" || true)
+  fi
   [ "$code" = "200" ]
 }
 
@@ -70,18 +96,36 @@ if [ -z "$MISSING" ]; then
   exit 0
 fi
 
-# 一个都没有 → 说明这个提交从来没构建过（不是「按路径裁剪掉了」），必须从零构建
-if [ -z "$REUSED" ]; then
-  echo ""
-  echo "=== registry 里没有 $TAG 的任何镜像 → 从零构建 ==="
-  sh scripts/ci-build.sh
-  exit 0
-fi
-
-# 有一部分 → 说明 NAS 的路径裁剪本来就只构建了部分镜像。
-# 缺的这些镜像「当前版本」就是现有的 latest（路径没变，镜像也不用变），
-# 这里不重建，直接沿用 —— 重建既慢又没意义。
+# 缺的必须补建，不能「沿用现有的 latest」。
+#
+# 为什么：发布时生产机的 .env 被钉在 commit SHA 上，compose pull 会按 SHA
+# 拉**每一个** compose 里引用的镜像。少一个镜像的该 SHA tag，
+# 那台机器的 pull 就失败、整台发布失败 —— 而 NAS 的路径裁剪恰恰会跳过
+# 「本次没改源码」的仓库（如 docreader）。
+# 复用旧代码没问题，但必须把旧代码重新打成这个 SHA 的镜像。
+#
+# TAG 必须显式传下去：tag 事件下 CI_COMMIT_SHA 可能是附注标签对象的 SHA，
+# 与镜像 tag 用的 commit SHA 不是一回事（上面已解析过，这里不能再退回原值）。
 echo ""
 echo "=== 复用 ${REUSED}"
-echo "=== 以下仓库没有 $TAG 版本，沿用现有的 latest（NAS 的路径裁剪判定它们本次无需重建）：$MISSING"
-echo "=== 本次发布未重新编译 ==="
+echo "=== 以下仓库没有 $TAG 版本，需要补建：${MISSING}"
+TAG="$TAG" REPOS_TO_BUILD="$MISSING" sh scripts/ci-build.sh
+
+# 补建后复核：发布前保证每个仓库在 $TAG 上都有镜像。
+# 不复核的话，缺镜像要等到 deploy 步骤才炸，排查成本高得多。
+echo ""
+echo "=== 补建后复核"
+STILL_MISSING=""
+for repo in $REPOS; do
+  if manifest_exists "$repo" "$TAG"; then
+    echo "  ✅ $repo:$TAG"
+  else
+    echo "  ❌ $repo:$TAG 仍然不存在"
+    STILL_MISSING="$STILL_MISSING $repo"
+  fi
+done
+if [ -n "$STILL_MISSING" ]; then
+  echo "!!! 仍有镜像缺失${STILL_MISSING} —— 部署必定失败，中止" >&2
+  exit 1
+fi
+echo "=== 全部镜像在 $TAG 上就绪 ==="
