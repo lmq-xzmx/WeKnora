@@ -812,12 +812,7 @@ func applyOIDCEnvOverrides(cfg *Config) {
 	//   OIDC_AUTH_PROVIDERS_JSON='[{"id":"zkju","display_name":"中科矩",
 	//     "issuer_url":"http://casdoor-zkju:3012","client_id":"..."}]'
 	if value := strings.TrimSpace(os.Getenv("OIDC_AUTH_PROVIDERS_JSON")); value != "" {
-		var providers []OIDCProviderConfig
-		if err := json.Unmarshal([]byte(value), &providers); err != nil {
-			// 配置坏了不能静默 —— 但也不能让整个服务起不来（OIDC 只是登录方式之一）。
-			// 记日志并忽略这块配置，登录回落到单 provider。
-			fmt.Printf("[WARN] OIDC_AUTH_PROVIDERS_JSON 解析失败，多 IdP 登录未启用: %v\n", err)
-		} else {
+		if providers := parseOIDCProvidersJSON(value); len(providers) > 0 {
 			cfg.OIDCAuth.Providers = providers
 		}
 	}
@@ -925,6 +920,23 @@ func (c *OIDCAuthConfig) NormalizeOIDCProviders() []OIDCProviderConfig {
 		out = append(out, p)
 	}
 	return out
+}
+
+// parseOIDCProvidersJSON 解析 OIDC_AUTH_PROVIDERS_JSON（多 IdP 列表）。
+//
+// 解析失败 → 返回空并记日志，**不让服务起不来**：OIDC 只是登录方式之一，
+// 配置坏了应该回落到单 provider，而不是整个 WeKnora 打不开。
+func parseOIDCProvidersJSON(raw string) []OIDCProviderConfig {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var providers []OIDCProviderConfig
+	if err := json.Unmarshal([]byte(raw), &providers); err != nil {
+		fmt.Printf("[WARN] OIDC_AUTH_PROVIDERS_JSON 解析失败，多 IdP 登录未启用: %v\n", err)
+		return nil
+	}
+	return providers
 }
 
 // slugifyProviderID 把显示名转成稳定的小写 id（用作登录按钮 key）。
