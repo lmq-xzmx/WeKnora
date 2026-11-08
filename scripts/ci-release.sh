@@ -22,12 +22,22 @@ TAG=${TAG:-${CI_COMMIT_SHA}}
 # ⚠️ tag 事件下 CI_COMMIT_SHA 可能是「附注标签对象」的 SHA（`git tag -a`），
 #    而不是标签指向的 commit 的 SHA —— 两者不同，会导致复用判断全部落空、
 #    白白从零构建一遍。镜像 tag 是按 commit SHA 命名的，这里统一解析成 commit SHA。
+#
+#    实测（Woodpecker 3.19 + gitea）：tag 事件的 pipelines.commit 存的就是
+#    标签对象 SHA（e471e5f6…），不是 commit SHA（62547aac…）。而部署步骤
+#    ci-deploy.sh 钉的是 commit SHA —— 两边不一致，compose pull 必然找不到镜像。
+#
+#    解析不了就**中止**：宁可不发布，也不能按错误的 tag 推镜像。
 if git rev-parse --verify -q "${TAG}^{commit}" >/dev/null 2>&1; then
   COMMIT_SHA=$(git rev-parse "${TAG}^{commit}")
   if [ "$COMMIT_SHA" != "$TAG" ]; then
     echo "TAG=$TAG 是标签对象，解析为 commit $COMMIT_SHA"
     TAG=$COMMIT_SHA
   fi
+else
+  echo "!!! 无法把 $TAG 解析成 commit —— 镜像会按错误的 tag 推送，部署必定失败，中止" >&2
+  echo "!!! （常见原因：步骤容器里没有 git，或 clone 没有取到标签对象）" >&2
+  exit 1
 fi
 # ⚠️ 不含 weknora-odl-hybrid：它现在由生产端推送维护（registry 的 :local 就是
 #    生产在跑的那份），CI 发布时既不复用也不覆盖它，免得把 :local 换成旧镜像。
