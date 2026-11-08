@@ -372,7 +372,11 @@ func (h *AuthHandler) GetOIDCAuthorizationURL(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.userService.GetOIDCAuthorizationURL(ctx, redirectURI)
+	// provider 为空 = 单 IdP 老路径（行为与改造前完全一致）；
+	// 非空 = 走指定 IdP（多 IdP 场景下前端每个按钮传自己的 provider id）。
+	providerID := strings.TrimSpace(c.Query("provider"))
+
+	resp, err := h.oidcAuthorizationURL(ctx, redirectURI, providerID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to generate OIDC authorization URL: %v", err)
 		appErr := errors.NewForbiddenError("OIDC authorization unavailable").WithDetails(err.Error())
@@ -420,7 +424,8 @@ func oidcCallbackURL(c *gin.Context) string {
 // @Router       /auth/oidc/start [get]
 func (h *AuthHandler) OIDCStart(c *gin.Context) {
 	ctx := c.Request.Context()
-	resp, err := h.userService.GetOIDCAuthorizationURL(ctx, oidcCallbackURL(c))
+	providerID := strings.TrimSpace(c.Query("provider"))
+	resp, err := h.oidcAuthorizationURL(ctx, oidcCallbackURL(c), providerID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to generate OIDC authorization URL: %v", err)
 		appErr := errors.NewForbiddenError("OIDC authorization unavailable").WithDetails(err.Error())
@@ -442,17 +447,53 @@ func (h *AuthHandler) OIDCStart(c *gin.Context) {
 func (h *AuthHandler) GetOIDCConfig(c *gin.Context) {
 	providerDisplayName := ""
 	enabled := false
+	// 多 IdP 列表（2026-11-09）。为空时前端渲染单个按钮 ——
+	// 与改造前完全一致，生产用户无感。
+	var providers []types.OIDCProviderInfo
 
 	if h.configInfo != nil && h.configInfo.OIDCAuth != nil {
 		enabled = h.configInfo.OIDCAuth.Enable
 		providerDisplayName = strings.TrimSpace(h.configInfo.OIDCAuth.ProviderDisplayName)
+		for _, p := range h.configInfo.OIDCAuth.NormalizeOIDCProviders() {
+			providers = append(providers, types.OIDCProviderInfo{
+				ID:          p.ID,
+				DisplayName: p.DisplayName,
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, &types.OIDCConfigResponse{
 		Success:             true,
 		Enabled:             enabled,
 		ProviderDisplayName: providerDisplayName,
+		Providers:           providers,
 	})
+}
+
+// oidcAuthorizationURL 生成授权地址。
+//
+// 多 IdP 能力是**可选**的（interfaces.MultiIdpUserService）：实现者没提供
+// 就退回老的单 IdP 方法。这样既不破坏既有实现（含测试 stub），又让
+// 新实现能用多 IdP。
+func (h *AuthHandler) oidcAuthorizationURL(ctx context.Context, redirectURI string, providerID string) (*types.OIDCAuthURLResponse, error) {
+	if providerID != "" {
+		if multi, ok := h.userService.(interfaces.MultiIdpUserService); ok {
+			return multi.GetOIDCAuthorizationURLForProvider(ctx, redirectURI, providerID)
+		}
+	}
+	return h.userService.GetOIDCAuthorizationURL(ctx, redirectURI)
+}
+
+// oidcLogin 完成 OIDC 登录（多 IdP 感知）。
+//
+// providerID 来自签名过的 state —— 攻击者改不了。
+func (h *AuthHandler) oidcLogin(ctx context.Context, code, redirectURI, providerID string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error) {
+	if providerID != "" {
+		if multi, ok := h.userService.(interfaces.MultiIdpUserService); ok {
+			return multi.LoginWithOIDCForProvider(ctx, code, redirectURI, providerID, provisioning)
+		}
+	}
+	return h.userService.LoginWithOIDC(ctx, code, redirectURI, provisioning)
 }
 
 // OIDCRedirectCallback godoc
@@ -495,7 +536,11 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.userService.LoginWithOIDC(ctx, code, strings.TrimSpace(decodedState.RedirectURI), h.resolveDefaultTenantMode(ctx))
+	// provider 从**签名过的 state** 里取（不是从 query）——
+	// 前端/攻击者改 query 没用，state 的签名密钥只有服务端知道。
+	resp, err := h.oidcLogin(ctx, code, strings.TrimSpace(decodedState.RedirectURI),
+		strings.TrimSpace(decodedState.Provider),
+		h.resolveDefaultTenantMode(ctx))
 	if err != nil {
 		logger.Errorf(ctx, "Failed to complete OIDC login via redirect callback: %v", err)
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(err.Error()))
@@ -527,6 +572,9 @@ func encodeOIDCCallbackPayload(resp *types.OIDCCallbackResponse) (string, error)
 type oidcStatePayload struct {
 	Nonce       string
 	RedirectURI string
+	// Provider 标识「本次登录走哪个 IdP」（2026-11-09 多 IdP）。
+	// 来自签名过的 state，攻击者改不了。
+	Provider string
 }
 
 func decodeOIDCState(raw string, req *http.Request) (*oidcStatePayload, error) {
@@ -544,6 +592,7 @@ func decodeOIDCState(raw string, req *http.Request) (*oidcStatePayload, error) {
 	return &oidcStatePayload{
 		Nonce:       payload.Nonce,
 		RedirectURI: strings.TrimSpace(payload.RedirectURI),
+		Provider:    strings.TrimSpace(payload.Provider),
 	}, nil
 }
 

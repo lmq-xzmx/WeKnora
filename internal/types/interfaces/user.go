@@ -7,6 +7,24 @@ import (
 )
 
 // UserService defines the user service interface
+// MultiIdpUserService 是「支持多 IdP」的可选能力接口（2026-11-09）。
+//
+// 为什么做成**可选**而不是加进 UserService：
+//
+//	UserService 有很多实现者（测试 stub、mock、替身），往里加方法会
+//	全部编译不过 —— 而多 IdP 只是个增强能力，不该强迫所有实现者跟进。
+//	handler 用类型断言探测：实现了就走多 IdP 路径，没实现就走老路径。
+type MultiIdpUserService interface {
+	// GetOIDCAuthorizationURLForProvider builds the authorization URL for a
+	// specific IdP. An empty providerID keeps the single-IdP behaviour
+	// byte-for-byte identical to GetOIDCAuthorizationURL.
+	GetOIDCAuthorizationURLForProvider(ctx context.Context, redirectURI string, providerID string) (*types.OIDCAuthURLResponse, error)
+	// LoginWithOIDCForProvider is LoginWithOIDC against a specific IdP.
+	// providerID comes from the signed OIDC state, so it cannot be forged
+	// by the client; an empty value keeps the single-IdP behaviour.
+	LoginWithOIDCForProvider(ctx context.Context, code, redirectURI string, providerID string, provisioning types.TenantProvisioningMode) (*types.OIDCCallbackResponse, error)
+}
+
 type UserService interface {
 	// Register creates a new user account
 	Register(ctx context.Context, req *types.RegisterRequest) (*types.User, error)

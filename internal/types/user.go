@@ -154,12 +154,25 @@ type OIDCAuthURLResponse struct {
 	// Nonce is bound to an HttpOnly cookie on /auth/oidc/url and verified
 	// on callback; omitted from JSON so clients cannot replay it alone.
 	Nonce string `json:"-"`
+	// ProviderID 标识「本次授权请求发往哪个 IdP」（2026-11-09 多 IdP）。
+	// 前端用它确认按钮与 provider 对应；服务端回调时以 state 里的为准
+	// （state 有签名，前端传的值不可信）。
+	ProviderID string `json:"provider_id,omitempty"`
+}
+
+// OIDCProviderInfo 描述一个可登录的 IdP（给前端渲染登录按钮）。
+type OIDCProviderInfo struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
 }
 
 type OIDCConfigResponse struct {
 	Success             bool   `json:"success"`
 	Enabled             bool   `json:"enabled"`
 	ProviderDisplayName string `json:"provider_display_name,omitempty"`
+	// Providers 多 IdP 列表（2026-11-09）。为空 = 单 IdP 老形态，
+	// 前端继续渲染一个按钮（行为与改造前完全一致）。
+	Providers []OIDCProviderInfo `json:"providers,omitempty"`
 }
 
 type OIDCCallbackResponse struct {
@@ -185,6 +198,10 @@ type OIDCUserInfo struct {
 	Username string                 `json:"username,omitempty"`
 	Email    string                 `json:"email,omitempty"`
 	Claims   map[string]interface{} `json:"claims,omitempty"`
+	// ProviderID 标识「这个身份来自哪个 IdP」（2026-11-09 多 IdP）。
+	// 用途：跨 IdP 同 email 时区分不同的人 —— 单 IdP 场景下为空，
+	// 行为与改造前完全一致。
+	ProviderID string `json:"provider_id,omitempty"`
 }
 
 // RegisterRequest represents a registration request

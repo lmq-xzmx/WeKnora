@@ -59,12 +59,22 @@ export interface OIDCAuthURLResponse {
   authorization_url?: string
   state?: string
   message?: string
+  /** 多 IdP：本次授权请求发往哪个 IdP（2026-11-09） */
+  provider_id?: string
+}
+
+/** 可登录的 IdP（多 IdP 场景下登录页按它渲染按钮） */
+export interface OIDCProviderInfo {
+  id: string
+  display_name: string
 }
 
 export interface OIDCConfigResponse {
   success: boolean
   enabled: boolean
   provider_display_name?: string
+  /** 多 IdP 列表；为空 = 单 IdP 老形态（一个按钮） */
+  providers?: OIDCProviderInfo[]
   message?: string
 }
 
@@ -223,9 +233,11 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
 /**
  * 获取 OIDC 登录跳转地址
  */
-export async function getOIDCAuthorizationURL(redirectURI: string): Promise<OIDCAuthURLResponse> {
+export async function getOIDCAuthorizationURL(redirectURI: string, providerID: string = ''): Promise<OIDCAuthURLResponse> {
   try {
-    const response = await get(`/api/v1/auth/oidc/url?redirect_uri=${encodeURIComponent(redirectURI)}`)
+    // provider 为空 = 单 IdP 老路径（后端行为与改造前一致）
+    const providerParam = providerID ? `&provider=${encodeURIComponent(providerID)}` : ''
+    const response = await get(`/api/v1/auth/oidc/url?redirect_uri=${encodeURIComponent(redirectURI)}${providerParam}`)
     return response as unknown as OIDCAuthURLResponse
   } catch (error: any) {
     return {

@@ -478,6 +478,57 @@ func (s *userService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI s
 	}, nil
 }
 
+// GetOIDCAuthorizationURLForProvider 生成「指定 IdP」的授权地址。
+//
+// providerID 为空时逐字节等价于 GetOIDCAuthorizationURL（老路径）。
+func (s *userService) GetOIDCAuthorizationURLForProvider(ctx context.Context, redirectURI string, providerID string) (*types.OIDCAuthURLResponse, error) {
+	cfg, effectiveProvider, err := s.getOIDCConfigForProvider(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(redirectURI) == "" {
+		return nil, errors.New("redirect_uri is required")
+	}
+
+	nonce, err := generateRandomString(24)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate state %w", err)
+	}
+
+	// state 里带上 provider —— 回调时据此选回同一套 IdP 配置。
+	state, err := secutils.SignOIDCState(&secutils.OIDCStatePayload{
+		Nonce:       nonce,
+		RedirectURI: strings.TrimSpace(redirectURI),
+		Provider:    effectiveProvider,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode OIDC state: %w", err)
+	}
+
+	query := url.Values{}
+	query.Set("response_type", "code")
+	query.Set("client_id", cfg.ClientID)
+	query.Set("redirect_uri", redirectURI)
+	query.Set("scope", strings.Join(cfg.Scopes, " "))
+	query.Set("state", state)
+
+	authURL := cfg.AuthorizationEndpoint
+	if strings.Contains(authURL, "?") {
+		authURL += "&" + query.Encode()
+	} else {
+		authURL += "?" + query.Encode()
+	}
+
+	return &types.OIDCAuthURLResponse{
+		Success:             true,
+		ProviderDisplayName: cfg.ProviderDisplayName,
+		AuthorizationURL:    authURL,
+		State:               state,
+		Nonce:               nonce,
+		ProviderID:          effectiveProvider,
+	}, nil
+}
+
 // LoginWithOIDC exchanges code for tokens, loads user info, provisions user if
 // needed, and returns local login tokens. provisioning is the default tenant
 // mode applied only when a brand-new local user is auto-created; it is resolved
@@ -511,6 +562,53 @@ func (s *userService) LoginWithOIDC(
 	if strings.TrimSpace(userInfo.Email) == "" {
 		return nil, errors.New("OIDC provider did not return email")
 	}
+
+	resp, _, err := s.issueTokensForOIDCUser(ctx, userInfo, provisioning)
+	return resp, err
+}
+
+// LoginWithOIDCForProvider 按指定 IdP 完成一次 OIDC 登录。
+//
+// providerID 来自 state（服务端签名，回调时解出）—— 攻击者改不了，
+// 因为 state 的签名密钥只有服务端知道。
+//
+// providerID 为空 → 单 provider 老路径，行为与改造前完全一致。
+func (s *userService) LoginWithOIDCForProvider(
+	ctx context.Context,
+	code, redirectURI string,
+	providerID string,
+	provisioning types.TenantProvisioningMode,
+) (*types.OIDCCallbackResponse, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, errors.New("code is required")
+	}
+	redirectURI = strings.TrimSpace(redirectURI)
+	if redirectURI == "" {
+		return nil, errors.New("redirect_uri is required")
+	}
+
+	cfg, effectiveProvider, err := s.getOIDCConfigForProvider(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenResp, err := s.exchangeOIDCCode(ctx, cfg, code, redirectURI)
+	if err != nil {
+		return nil, err
+	}
+
+	userInfo, err := s.resolveOIDCUserInfo(ctx, cfg, tokenResp)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(userInfo.Email) == "" {
+		return nil, errors.New("OIDC provider did not return email")
+	}
+
+	// 把「这次登录来自哪个 IdP」带进用户签发 —— 跨 IdP 同 email 时，
+	// 靠它区分「这是中科矩的那个 zhang@qq.com，还是教育的那个」。
+	userInfo.ProviderID = effectiveProvider
 
 	resp, _, err := s.issueTokensForOIDCUser(ctx, userInfo, provisioning)
 	return resp, err
@@ -1626,6 +1724,58 @@ func (s *userService) getOIDCConfig(ctx context.Context) (*config.OIDCAuthConfig
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// getOIDCConfigForProvider 取「指定 IdP」的配置。
+//
+// providerID 为空 → 走单 provider 老路径（逐字节等价于改造前）。
+// providerID 非空 → 在多 IdP 列表里找对应项，转成同样的 OIDCAuthConfig
+// 形状交给下游，于是下游（discovery / 换 token / 取 userinfo）**一行都不用改**。
+//
+// 返回的 providerID 是「最终生效的 IdP 标识」，登录链路用它做：
+//
+//	· state 里携带（回调时据此选配置）
+//	· 外部身份锚点（解决跨 IdP 同 email 串号）
+func (s *userService) getOIDCConfigForProvider(ctx context.Context, providerID string) (*config.OIDCAuthConfig, string, error) {
+	base, err := s.getOIDCConfig(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		// 单 provider 模式：老流程。此时 IdP 标识取 IssuerURL —— 后面
+		// 「外部身份锚点」用它，保证老用户不受影响。
+		return base, strings.TrimSpace(base.IssuerURL), nil
+	}
+	providers := base.NormalizeOIDCProviders()
+	for _, p := range providers {
+		if p.ID != providerID {
+			continue
+		}
+		cfg := &config.OIDCAuthConfig{
+			Enable:                true,
+			IssuerURL:             p.IssuerURL,
+			DiscoveryURL:          p.DiscoveryURL,
+			ProviderDisplayName:   p.DisplayName,
+			ClientID:              p.ClientID,
+			ClientSecret:          p.ClientSecret,
+			AuthorizationEndpoint: p.AuthorizationEndpoint,
+			TokenEndpoint:         p.TokenEndpoint,
+			UserInfoEndpoint:      p.UserInfoEndpoint,
+			JwksURI:               p.JwksURI,
+			Scopes:                p.Scopes,
+			UserInfoMapping:       p.UserInfoMapping,
+			ExchangeAudiences:     p.ExchangeAudiences,
+		}
+		if cfg.UserInfoMapping == nil {
+			cfg.UserInfoMapping = &config.OIDCUserInfoMapping{Username: "name", Email: "email"}
+		}
+		if err := s.populateOIDCEndpoints(ctx, cfg); err != nil {
+			return nil, "", err
+		}
+		return cfg, p.ID, nil
+	}
+	return nil, "", fmt.Errorf("unknown OIDC provider %q", providerID)
 }
 
 func oidcNeedsDiscovery(cfg *config.OIDCAuthConfig) bool {

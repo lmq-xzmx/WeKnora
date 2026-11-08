@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -315,6 +316,35 @@ type OIDCUserInfoMapping struct {
 	Email    string `yaml:"email"    json:"email"`
 }
 
+// OIDCProviderConfig 描述一个可登录的外部 IdP（OIDC provider）。
+//
+// 为什么单独成结构而不是把 OIDCAuthConfig 变成数组：
+//
+//	生产环境（以及所有已存在的部署）用的是**单 provider** 配置形态，
+//	把它改成数组会让所有旧配置失效 —— 而我们要的是「生产用户无感」。
+//	所以这里保留单 provider 字段作为「默认 provider」，多 provider 是
+//	叠加在其上的可选列表。
+type OIDCProviderConfig struct {
+	// ID 内部唯一标识（登录页按钮的 key、state 里传递的凭据）。
+	// 留空时由 DisplayName 或 IssuerURL 推导。
+	ID string `yaml:"id" json:"id"`
+	// DisplayName 登录按钮上显示的名字（如「中科矩账号」）。
+	DisplayName string `yaml:"display_name" json:"display_name"`
+	// IssuerURL / DiscoveryURL / 端点：与单 provider 字段语义一致。
+	IssuerURL             string               `yaml:"issuer_url"             json:"issuer_url"`
+	DiscoveryURL          string               `yaml:"discovery_url"          json:"discovery_url"`
+	ClientID              string               `yaml:"client_id"              json:"client_id"`
+	ClientSecret          string               `yaml:"client_secret"          json:"-"`
+	AuthorizationEndpoint string               `yaml:"authorization_endpoint" json:"authorization_endpoint"`
+	TokenEndpoint         string               `yaml:"token_endpoint"         json:"token_endpoint"`
+	UserInfoEndpoint      string               `yaml:"user_info_endpoint"     json:"user_info_endpoint"`
+	JwksURI               string               `yaml:"jwks_uri"               json:"jwks_uri"`
+	Scopes                []string             `yaml:"scopes"                 json:"scopes"`
+	UserInfoMapping       *OIDCUserInfoMapping `yaml:"user_info_mapping"      json:"user_info_mapping"`
+	// ExchangeAudiences 该 provider 允许放行的外部 client_id。
+	ExchangeAudiences []string `yaml:"exchange_audiences" json:"exchange_audiences"`
+}
+
 type OIDCAuthConfig struct {
 	Enable                bool                 `yaml:"enable"                 json:"enable"`
 	IssuerURL             string               `yaml:"issuer_url"             json:"issuer_url"`
@@ -328,6 +358,18 @@ type OIDCAuthConfig struct {
 	JwksURI               string               `yaml:"jwks_uri"               json:"jwks_uri"`
 	Scopes                []string             `yaml:"scopes"                 json:"scopes"`
 	UserInfoMapping       *OIDCUserInfoMapping `yaml:"user_info_mapping"      json:"user_info_mapping"`
+
+	// Providers 多 IdP 列表（2026-11-09 新增）。
+	//
+	// 用途：一套 WeKnora 部署接入多个客户的 Casdoor —— 每个客户在自己的
+	// Casdoor 里注册一个应用（独立 client_id），登录页按 provider 渲染
+	// 多个按钮「用中科矩账号登录 / 用教育账号登录」。
+	//
+	// 向后兼容：
+	//   · Providers 为空 → 行为与改造前完全一致（单 provider）
+	//   · Providers 非空 → 第一项若未填字段，继承下面的单 provider 字段
+	// 因此生产环境**不需要改任何配置**。
+	Providers []OIDCProviderConfig `yaml:"providers" json:"providers"`
 
 	// ExchangeAudiences 列出「允许拿别家应用的 IdP token 来换发本系统 token」
 	// 的应用 client_id。
@@ -761,6 +803,25 @@ func applyOIDCEnvOverrides(cfg *Config) {
 		cfg.OIDCAuth.ExchangeAudiences = splitAndTrimList(value)
 	}
 
+	// 多 provider 注入：OIDC_AUTH_PROVIDERS_JSON 放一个 JSON 数组。
+	// 为什么用 JSON 而不是逐个 OIDC_AUTH_<N>_* ：逐个要 N 组变量名，
+	// 还得约定编号边界；JSON 一个变量装全部，容器编排里也好塞（挂文件或
+	// 环境变量都行）。
+	//
+	// 形如：
+	//   OIDC_AUTH_PROVIDERS_JSON='[{"id":"zkju","display_name":"中科矩",
+	//     "issuer_url":"http://casdoor-zkju:3012","client_id":"..."}]'
+	if value := strings.TrimSpace(os.Getenv("OIDC_AUTH_PROVIDERS_JSON")); value != "" {
+		var providers []OIDCProviderConfig
+		if err := json.Unmarshal([]byte(value), &providers); err != nil {
+			// 配置坏了不能静默 —— 但也不能让整个服务起不来（OIDC 只是登录方式之一）。
+			// 记日志并忽略这块配置，登录回落到单 provider。
+			fmt.Printf("[WARN] OIDC_AUTH_PROVIDERS_JSON 解析失败，多 IdP 登录未启用: %v\n", err)
+		} else {
+			cfg.OIDCAuth.Providers = providers
+		}
+	}
+
 	if cfg.OIDCAuth.ProviderDisplayName == "" {
 		cfg.OIDCAuth.ProviderDisplayName = "OIDC"
 	}
@@ -779,6 +840,116 @@ func applyOIDCEnvOverrides(cfg *Config) {
 }
 
 // splitAndTrimList 把「逗号或空格分隔的列表」解析成去空去重的字符串切片。
+// NormalizeOIDCProviders 把 Providers 列表补全成「每个 provider 都有一整套
+// 端点」的形态，并把「单 provider 字段」当作兜底。
+//
+// 兼容规则（这是「生产用户无感」的技术保证）：
+//
+//	· Providers 为空 → 返回 nil，调用方走原来的单 provider 路径，
+//	  行为与改造前逐字节一致。
+//	· Providers 非空 → 每项缺失的字段从单 provider 字段继承；
+//	  ID 缺失时用 DisplayName 生成一个稳定的 slug。
+//
+// 返回的每个 provider 都带 EffectiveID —— 这是登录链路里区分
+// 「哪个 IdP 的 token」的依据，也是解决跨 IdP email 冲突的锚点。
+func (c *OIDCAuthConfig) NormalizeOIDCProviders() []OIDCProviderConfig {
+	if c == nil || len(c.Providers) == 0 {
+		return nil
+	}
+	out := make([]OIDCProviderConfig, 0, len(c.Providers))
+	seen := map[string]bool{}
+	for i := range c.Providers {
+		p := c.Providers[i]
+		if p.IssuerURL == "" {
+			p.IssuerURL = c.IssuerURL
+		}
+		if p.DiscoveryURL == "" {
+			p.DiscoveryURL = c.DiscoveryURL
+		}
+		if p.ClientID == "" {
+			p.ClientID = c.ClientID
+		}
+		if p.ClientSecret == "" {
+			p.ClientSecret = c.ClientSecret
+		}
+		if p.AuthorizationEndpoint == "" {
+			p.AuthorizationEndpoint = c.AuthorizationEndpoint
+		}
+		if p.TokenEndpoint == "" {
+			p.TokenEndpoint = c.TokenEndpoint
+		}
+		if p.UserInfoEndpoint == "" {
+			p.UserInfoEndpoint = c.UserInfoEndpoint
+		}
+		if p.JwksURI == "" {
+			p.JwksURI = c.JwksURI
+		}
+		if len(p.Scopes) == 0 {
+			p.Scopes = c.Scopes
+		}
+		if p.UserInfoMapping == nil {
+			p.UserInfoMapping = c.UserInfoMapping
+		}
+		if len(p.ExchangeAudiences) == 0 {
+			p.ExchangeAudiences = c.ExchangeAudiences
+		}
+		if p.DisplayName == "" {
+			p.DisplayName = c.ProviderDisplayName
+		}
+		if p.DisplayName == "" {
+			p.DisplayName = "OIDC"
+		}
+		// ID：显式 > DisplayName slug > IssuerURL host > 序号
+		id := p.ID
+		if id == "" {
+			id = slugifyProviderID(p.DisplayName)
+		}
+		if id == "" {
+			id = slugifyProviderID(p.IssuerURL)
+		}
+		if id == "" {
+			id = fmt.Sprintf("provider-%d", i)
+		}
+		if seen[id] {
+			// ID 冲突 → 加序号，保证 EffectiveID 唯一（它是身份锚点）
+			base := id
+			for n := 2; ; n++ {
+				id = fmt.Sprintf("%s-%d", base, n)
+				if !seen[id] {
+					break
+				}
+			}
+		}
+		seen[id] = true
+		p.ID = id
+		out = append(out, p)
+	}
+	return out
+}
+
+// slugifyProviderID 把显示名转成稳定的小写 id（用作登录按钮 key）。
+func slugifyProviderID(s string) string {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	prevDash := false
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash && b.Len() > 0 {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
 func splitAndTrimList(value string) []string {
 	fields := strings.FieldsFunc(value, func(r rune) bool {
 		return r == ',' || r == ' ' || r == '\t' || r == '\n'

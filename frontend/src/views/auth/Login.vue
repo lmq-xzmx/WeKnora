@@ -203,10 +203,15 @@
             <div v-if="oidcEnabled" class="oidc-divider">
               <span>{{ $t('auth.orContinueWith') }}</span>
             </div>
-            <t-button v-if="oidcEnabled" theme="primary" size="large" block :loading="oidcLoading" :disabled="loading"
-              class="oidc-button" @click="handleOIDCLogin">
-              {{ oidcLoading ? $t('auth.redirectingToOIDC') : oidcLoginText }}
-            </t-button>
+            <template v-if="oidcEnabled">
+              <t-button v-for="btn in oidcButtons" :key="btn.id || 'default'"
+                theme="primary" size="large" block
+                :loading="oidcLoading && oidcLoadingProvider === btn.id"
+                :disabled="loading"
+                class="oidc-button" @click="handleOIDCLogin(btn.id)">
+                {{ oidcLoading && oidcLoadingProvider === btn.id ? $t('auth.redirectingToOIDC') : btn.label }}
+              </t-button>
+            </template>
 
             <div class="register-cta" v-if="!oidcEnabled && registrationEnabled">
                 <div class="register-cta__divider">
@@ -250,8 +255,10 @@
             <div class="oidc-divider">
               <span>{{ $t('auth.orContinueWith') }}</span>
             </div>
-            <t-button theme="primary" size="large" block :loading="oidcLoading" :disabled="loading"
-              class="oidc-button" @click="handleOIDCLogin">
+            <t-button theme="primary" size="large" block
+              :loading="oidcLoading && oidcLoadingProvider === ''"
+              :disabled="loading"
+              class="oidc-button" @click="handleOIDCLogin('')">
               {{ oidcLoading ? $t('auth.redirectingToOIDC') : oidcLoginText }}
             </t-button>
             <div class="form-footer">
@@ -423,6 +430,12 @@ const isRegisterMode = ref(false)
 const showLanguageMenu = ref(false)
 const oidcEnabled = ref(false)
 const oidcProviderName = ref('')
+// 多 IdP（2026-11-09）：可用 IdP 列表。
+// 为空 = 单 IdP 老形态（渲染一个按钮，文案不变 —— 生产用户无感）。
+const oidcProviders = ref<Array<{ id: string; display_name: string }>>([])
+// 当前正在跳转的 provider id —— 多按钮时只 disable 正在用的那个，
+// 其余按钮仍可点（换账号登录不用刷新页面）。
+const oidcLoadingProvider = ref('')
 // registrationEnabled defaults to true so that on first paint the Register
 // link is visible; the actual mode is fetched from /auth/config in onMounted.
 // In invite_only mode the link/card are hidden.
@@ -455,6 +468,19 @@ const oidcLoginText = computed(() => {
     return t('auth.oidcLoginWithProvider', { provider: oidcProviderName.value })
   }
   return t('auth.oidcLogin')
+})
+
+// oidcButtons 渲染用的按钮列表。
+// 单 IdP → 一个「默认」按钮（id 为空 → 后端走老路径）；
+// 多 IdP → 每个 IdP 一个按钮。
+const oidcButtons = computed(() => {
+  if (oidcProviders.value.length > 0) {
+    return oidcProviders.value.map(p => ({
+      id: p.id,
+      label: p.display_name || p.id,
+    }))
+  }
+  return [{ id: '', label: oidcLoginText.value }]
 })
 const currentLangOption = computed(() => languageOptions.find(l => l.value === currentLanguage.value))
 
@@ -613,9 +639,12 @@ const loadOIDCConfig = async () => {
     const response = await getOIDCConfig()
     oidcEnabled.value = !!response.success && !!response.enabled
     oidcProviderName.value = response.provider_display_name || ''
+    // 多 IdP 列表；为空 = 单 IdP 老形态（一个按钮，文案不变）
+    oidcProviders.value = response.providers || []
   } catch {
     oidcEnabled.value = false
     oidcProviderName.value = ''
+    oidcProviders.value = []
   }
 }
 
@@ -633,10 +662,11 @@ const loadAuthConfig = async () => {
   }
 }
 
-const handleOIDCLogin = async () => {
+const handleOIDCLogin = async (providerID: string = '') => {
   try {
     oidcLoading.value = true
-    const response = await getOIDCAuthorizationURL(getBackendOIDCRedirectURI())
+    oidcLoadingProvider.value = providerID
+    const response = await getOIDCAuthorizationURL(getBackendOIDCRedirectURI(), providerID)
     const authorizationURL = response.authorization_url
 
     if (!response.success || !authorizationURL) {
@@ -654,6 +684,7 @@ const handleOIDCLogin = async () => {
     MessagePlugin.error(error.message || t('auth.oidcLoginFailed'))
   } finally {
     oidcLoading.value = false
+    oidcLoadingProvider.value = ''
   }
 }
 

@@ -22,6 +22,14 @@ type OIDCStatePayload struct {
 	Nonce       string `json:"nonce"`
 	RedirectURI string `json:"redirect_uri,omitempty"`
 	IssuedAt    int64  `json:"iat"`
+	// Provider 标识「本次登录走的是哪个 IdP」（2026-11-09 多 IdP 新增）。
+	//
+	// 为什么必须带：多 provider 场景下，回调时只有 code —— code 是向
+	// 哪个 IdP 换的 token，要用哪个 provider 的 client_id/secret 去换，
+	// 只有发起登录时才知道。state 是服务端签名的往返凭据，正好承载它。
+	//
+	// 留空 = 单 provider 模式（老流程），行为与改造前完全一致。
+	Provider string `json:"provider,omitempty"`
 }
 
 var (
