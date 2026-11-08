@@ -32,8 +32,45 @@ output_dir="$(cd "$output_dir" && pwd)"
 build_dir="$(mktemp -d /tmp/weknora-bsk-build.XXXXXX)"
 trap 'rm -rf "$build_dir"' EXIT
 
-git clone --no-checkout https://github.com/Tencent/BrowserSkill.git "$build_dir/source"
-git -C "$build_dir/source" checkout --detach "$source_commit"
+fetch_source() {
+  local dst="$1"
+  local attempt
+  # 优先走 codeload 的纯 HTTPS tarball：NAS 构建机上 GitHub 的 git 协议不稳
+  # （实测 GnuTLS recv error -110，ls-remote 直接挂死），而 tarball 下载稳定。
+  # tarball 的 URL 自带 commit sha，内容与 checkout --detach 到该 commit 完全一致。
+  for attempt in 1 2 3; do
+    echo "尝试 ${attempt}：从 codeload 下载 BrowserSkill 源码 tarball" >&2
+    if curl -fsSL --connect-timeout 20 --max-time 300 \
+         -o "$build_dir/source.tar.gz" \
+         "https://codeload.github.com/Tencent/BrowserSkill/tar.gz/$source_commit"; then
+      rm -rf "$dst"
+      mkdir -p "$dst"
+      if tar -xzf "$build_dir/source.tar.gz" -C "$dst" --strip-components=1; then
+        rm -f "$build_dir/source.tar.gz"
+        return 0
+      fi
+      echo "tarball 解压失败（尝试 ${attempt}）" >&2
+    else
+      echo "tarball 下载失败（尝试 ${attempt}）" >&2
+    fi
+    sleep $((attempt * 10))
+  done
+  # 兜底：git clone（同样带重试）
+  for attempt in 1 2 3; do
+    echo "尝试 ${attempt}：git clone BrowserSkill" >&2
+    rm -rf "$dst"
+    if git clone --no-checkout https://github.com/Tencent/BrowserSkill.git "$dst" \
+       && git -C "$dst" checkout --detach "$source_commit"; then
+      return 0
+    fi
+    echo "git clone 失败（尝试 ${attempt}）" >&2
+    sleep $((attempt * 10))
+  done
+  echo "无法获取 BrowserSkill 源码：tarball 与 git clone 均失败" >&2
+  return 1
+}
+
+fetch_source "$build_dir/source"
 (
   cd "$build_dir/source"
   npx --yes pnpm@10.17.0 install --frozen-lockfile
