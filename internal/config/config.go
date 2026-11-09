@@ -855,11 +855,30 @@ func (c *OIDCAuthConfig) NormalizeOIDCProviders() []OIDCProviderConfig {
 	seen := map[string]bool{}
 	for i := range c.Providers {
 		p := c.Providers[i]
+		// 端点继承的关键规则（2026-11-09 实测踩坑）：
+		//
+		// provider **显式给了 issuer_url 或 discovery_url** → 它指向的是
+		// 另一个 Casdoor（另一个客户）→ **绝不能**继承单 provider 的
+		// AuthorizationEndpoint/TokenEndpoint/JwksURI（那是上一个 Casdoor 的）。
+		// 正确做法：留空 → 后面 populateOIDCEndpoints 走 discovery 自动填。
+		//
+		// 反之，provider 什么都没给 → 继承单 provider 的全部字段（老行为）。
+		//
+		// 踩过的坑：edu provider 给了 issuer_url=434 的 Casdoor，但继承来了
+		// 457 的 AuthorizationEndpoint → oidcNeedsDiscovery 判定「端点已全」
+		// → 跳过 discovery → 授权请求发到了 457（错的 Casdoor）。
+		ownIdp := p.IssuerURL != "" || p.DiscoveryURL != ""
 		if p.IssuerURL == "" {
 			p.IssuerURL = c.IssuerURL
 		}
 		if p.DiscoveryURL == "" {
-			p.DiscoveryURL = c.DiscoveryURL
+			// provider 指向自己的 IdP 时，discovery_url 跟着 issuer 走，
+			// 不继承单 provider 的（那是别家的 discovery）。
+			if ownIdp {
+				p.DiscoveryURL = strings.TrimSuffix(p.IssuerURL, "/") + "/.well-known/openid-configuration"
+			} else {
+				p.DiscoveryURL = c.DiscoveryURL
+			}
 		}
 		if p.ClientID == "" {
 			p.ClientID = c.ClientID
@@ -867,17 +886,19 @@ func (c *OIDCAuthConfig) NormalizeOIDCProviders() []OIDCProviderConfig {
 		if p.ClientSecret == "" {
 			p.ClientSecret = c.ClientSecret
 		}
-		if p.AuthorizationEndpoint == "" {
-			p.AuthorizationEndpoint = c.AuthorizationEndpoint
-		}
-		if p.TokenEndpoint == "" {
-			p.TokenEndpoint = c.TokenEndpoint
-		}
-		if p.UserInfoEndpoint == "" {
-			p.UserInfoEndpoint = c.UserInfoEndpoint
-		}
-		if p.JwksURI == "" {
-			p.JwksURI = c.JwksURI
+		if !ownIdp {
+			if p.AuthorizationEndpoint == "" {
+				p.AuthorizationEndpoint = c.AuthorizationEndpoint
+			}
+			if p.TokenEndpoint == "" {
+				p.TokenEndpoint = c.TokenEndpoint
+			}
+			if p.UserInfoEndpoint == "" {
+				p.UserInfoEndpoint = c.UserInfoEndpoint
+			}
+			if p.JwksURI == "" {
+				p.JwksURI = c.JwksURI
+			}
 		}
 		if len(p.Scopes) == 0 {
 			p.Scopes = c.Scopes

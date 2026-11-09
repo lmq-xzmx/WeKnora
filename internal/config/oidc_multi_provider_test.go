@@ -97,6 +97,60 @@ func TestNormalizeOIDCProviders_DeduplicatesIDs(t *testing.T) {
 	}
 }
 
+// TestNormalizeOIDCProviders_OwnIdpDoesNotInheritEndpoints
+// provider 指向**另一个 Casdoor**（给了自己的 issuer_url）时，
+// 绝不能继承单 provider 的 AuthorizationEndpoint/TokenEndpoint/JwksURI ——
+// 那是上一个 Casdoor 的。
+//
+// 踩过的坑（2026-11-09）：edu provider 给了 434 的 issuer_url，却继承了
+// 457 的 AuthorizationEndpoint → oidcNeedsDiscovery 判定「端点已全」→
+// 跳过 discovery → 授权请求发到了 457（错的 Casdoor，错的 client_id 域）。
+//
+// 正确行为：端点留空 → 后面 populateOIDCEndpoints 走 discovery 自动填
+// （discovery_url 跟着自己的 issuer 走）。
+func TestNormalizeOIDCProviders_OwnIdpDoesNotInheritEndpoints(t *testing.T) {
+	cfg := &OIDCAuthConfig{
+		IssuerURL:             "http://casdoor-a:3012",
+		DiscoveryURL:          "http://casdoor-a:3012/.well-known/openid-configuration",
+		AuthorizationEndpoint: "http://casdoor-a:3012/login/oauth/authorize",
+		TokenEndpoint:         "http://casdoor-a:3012/api/login/oauth/access_token",
+		UserInfoEndpoint:      "http://casdoor-a:3012/api/userinfo",
+		JwksURI:               "http://casdoor-a:3012/.well-known/jwks",
+		ClientID:              "client-a",
+		ClientSecret:          "secret-a",
+		Providers: []OIDCProviderConfig{
+			{ID: "zkju", IssuerURL: "http://casdoor-a:3012", ClientID: "client-a"},
+			{ID: "edu", IssuerURL: "http://casdoor-b:3012", ClientID: "client-b"},
+		},
+	}
+	got := cfg.NormalizeOIDCProviders()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 providers, got %d", len(got))
+	}
+	edu := got[1]
+	if edu.AuthorizationEndpoint != "" {
+		t.Errorf("edu must NOT inherit another IdP's authorization endpoint, got %q", edu.AuthorizationEndpoint)
+	}
+	if edu.TokenEndpoint != "" {
+		t.Errorf("edu must NOT inherit another IdP's token endpoint, got %q", edu.TokenEndpoint)
+	}
+	if edu.JwksURI != "" {
+		t.Errorf("edu must NOT inherit another IdP's jwks uri, got %q", edu.JwksURI)
+	}
+	if edu.UserInfoEndpoint != "" {
+		t.Errorf("edu must NOT inherit another IdP's userinfo endpoint, got %q", edu.UserInfoEndpoint)
+	}
+	// discovery_url 要跟着自己的 issuer 走
+	want := "http://casdoor-b:3012/.well-known/openid-configuration"
+	if edu.DiscoveryURL != want {
+		t.Errorf("discovery_url should follow own issuer: want %q got %q", want, edu.DiscoveryURL)
+	}
+	// client_id / client_secret 仍可继承（同一客户的应用登记）
+	if edu.ClientID != "client-b" {
+		t.Errorf("client_id should stay, got %q", edu.ClientID)
+	}
+}
+
 // TestOIDCProvidersFromEnv_JSON
 // OIDC_AUTH_PROVIDERS_JSON 注入多 IdP。
 func TestOIDCProvidersFromEnv_JSON(t *testing.T) {
