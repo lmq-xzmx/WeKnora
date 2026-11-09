@@ -58,8 +58,17 @@ set -a
 source "$REPO/.env"
 set +a
 
-# 场景配置覆盖（可选）
-if [ -n "$PROFILE" ]; then
+# 场景配置覆盖（可选）—— 用 geo-platform 的通用 profile 加载器，
+# 各模块共用同一套约定（目录、优先级、JSON 引号坑）。
+PROFILE_LIB="$REPO/../geo-platform/deploy/profile-lib.sh"
+if [ -f "$PROFILE_LIB" ]; then
+  # shellcheck disable=SC1091
+  . "$PROFILE_LIB"
+  PROFILE_NAME="$PROFILE"
+  # 查找路径：共享目录（geo-platform/deploy/profiles）+ 本仓目录
+  load_profile "$REPO/../geo-platform" "$REPO/deploy/profiles" || exit 2
+elif [ -n "$PROFILE" ]; then
+  # 没有通用库时的兜底：就地加载本仓的 profiles/
   PROFILE_FILE="$REPO/deploy/profiles/${PROFILE}.env"
   if [ ! -f "$PROFILE_FILE" ]; then
     echo "[run-local] 场景配置不存在: $PROFILE_FILE"
