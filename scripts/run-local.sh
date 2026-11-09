@@ -34,7 +34,20 @@ while [ $# -gt 0 ]; do
 done
 
 BIN=/tmp/WeKnora-local
-if [ ! -x "$BIN" ] || [ "$REPO/internal" -nt "$BIN" ] || [ "$REPO/cmd" -nt "$BIN" ]; then
+# 重编译判定：看**具体文件**的时间戳，不是目录 ——
+# 目录的 mtime 只在增删文件时变，改目录里的 .go 文件不会更新它。
+# 踩过（2026-11-09）：改了 internal/config/config.go 后目录 mtime 没变 →
+#   旧二进制一直被复用 → 新功能「配了不生效」，排查了很久。
+NEED_BUILD=0
+if [ ! -x "$BIN" ]; then
+  NEED_BUILD=1
+else
+  for f in "$REPO/cmd/server/main.go" "$REPO/internal/config/config.go" \
+           "$REPO/internal/handler/auth.go" "$REPO/internal/application/service/user.go"; do
+    [ -f "$f" ] && [ "$f" -nt "$BIN" ] && NEED_BUILD=1 && break
+  done
+fi
+if [ "$NEED_BUILD" = "1" ]; then
   echo "[run-local] 编译二进制…"
   CGO_ENABLED=1 go build -o "$BIN" ./cmd/server || exit 1
 fi

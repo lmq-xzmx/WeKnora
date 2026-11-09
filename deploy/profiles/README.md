@@ -55,6 +55,31 @@ http://localhost:5015/api/v1/auth/oidc/callback
 
 客户各自的 Casdoor **不用改** —— 我们只是用不同的 client_id 去连它们。
 
+## 踩坑记录
+
+### 1. profile 文件里的 JSON 必须用单引号包裹
+
+profile 是被 shell `source` 的 —— `KEY=[{"a":"b"}]` 里的双引号会被 shell
+当引号处理剥掉，JSON 变成 `{a:b}` → 解析失败 → **静默回落到单 IdP**
+（页面看起来"配置没生效"，但没有任何报错）。
+
+正确写法：`KEY='[{"a":"b"}]'`
+
+### 2. 改了 Go 代码但二进制没重编 → 新功能"配了不生效"
+
+`run-local.sh` 原来用**目录** mtime 判断是否重编译：
+`[ "$REPO/internal" -nt "$BIN" ]`。但改的是目录**里的** .go 文件，
+目录 mtime 不变 → 旧二进制一直被复用。
+
+2026-11-09 排查这个坑花了很久（env 明明在进程里、格式也对，但 config 读不到）。
+
+已修：改为检查**具体文件**的时间戳
+（cmd/server/main.go / internal/config/config.go / internal/handler/auth.go /
+internal/application/service/user.go）。
+
+**手动验证新功能时，先确认二进制是新的**：
+`ls -l /tmp/WeKnora-local` 看时间戳 vs 你改的文件时间。
+
 ## 凭据处理
 
 `OIDC_AUTH_PROVIDERS_JSON` 里含 client_secret 时**不要写进文件**（会进 git）。
