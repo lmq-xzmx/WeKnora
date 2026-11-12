@@ -48,6 +48,15 @@ const router = createRouter({
       component: () => import("../views/auth/Login.vue"),
       meta: { requiresAuth: false, requiresInit: false }
     },
+    // 路径直达登录：/edu/login → 434 生产机的 Casdoor，/zkju/login → 457 的。
+    // 一套开发机 WeKnora 顶多个生产机，路径即入口；后端没配该 IdP 时
+    // 留在登录页提示（Login.vue 里处理），不会静默跳错地方。
+    {
+      path: "/:provider/login",
+      name: "loginByProvider",
+      component: () => import("../views/auth/Login.vue"),
+      meta: { requiresAuth: false, requiresInit: false }
+    },
     // Embed chat is a separate entry (embed.html + embed-main.ts), not this SPA.
     {
       path: "/register",

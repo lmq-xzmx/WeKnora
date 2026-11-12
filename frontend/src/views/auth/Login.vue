@@ -181,8 +181,8 @@
           </div>
 
           <div class="form-content">
-            <!-- 本地登录表单 (OIDC 启用时隐藏) -->
-            <t-form v-if="!oidcEnabled" ref="formRef" :data="formData" :rules="formRules" @submit="handleLogin" layout="vertical"
+            <!-- 本地登录表单：OIDC 启用时默认隐藏，点「本地账号登录」或走 /dev/login 才显示 -->
+            <t-form v-if="!oidcEnabled || localLogin" ref="formRef" :data="formData" :rules="formRules" @submit="handleLogin" layout="vertical"
               label-align="top">
               <t-form-item :label="$t('auth.email')" name="email">
                 <t-input v-model="formData.email" :placeholder="$t('auth.emailPlaceholder')" type="text"
@@ -197,13 +197,20 @@
               <t-button type="submit" theme="primary" size="large" block :loading="loading" class="submit-button">
                 {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
               </t-button>
+
+              <!-- OIDC 开着但用户选了本地登录 → 给一个返回组织账号的出口 -->
+              <div v-if="oidcEnabled && localLogin" class="local-login-back">
+                <t-button theme="default" variant="outline" size="large" block :disabled="loading" @click="localLogin = false">
+                  {{ $t('auth.orContinueWith') }}
+                </t-button>
+              </div>
             </t-form>
 
             <!-- OIDC 登录按钮 (OIDC 启用时显示) -->
-            <div v-if="oidcEnabled" class="oidc-divider">
+            <div v-if="oidcEnabled && !localLogin" class="oidc-divider">
               <span>{{ $t('auth.orContinueWith') }}</span>
             </div>
-            <template v-if="oidcEnabled">
+            <template v-if="oidcEnabled && !localLogin">
               <t-button v-for="btn in oidcButtons" :key="btn.id || 'default'"
                 theme="primary" size="large" block
                 :loading="oidcLoading && oidcLoadingProvider === btn.id"
@@ -211,6 +218,15 @@
                 class="oidc-button" @click="handleOIDCLogin(btn.id)">
                 {{ oidcLoading && oidcLoadingProvider === btn.id ? $t('auth.redirectingToOIDC') : btn.label }}
               </t-button>
+              <!-- 开发机入口：本地账号（用户名密码）——生产是纯 OIDC，这里多一个开发用的入口 -->
+              <t-button theme="default" variant="outline" size="large" block
+                :disabled="loading" class="oidc-button local-entry" @click="localLogin = true">
+                本地账号登录（开发机）
+              </t-button>
+              <!-- 路径直达失败：这个 IdP 后端没配，别让人以为已经跳过去了 -->
+              <div v-if="providerPathError" class="provider-path-error">
+                路径 /{{ providerPathError }}/login 对应的账号入口未配置，请从上方按钮选择登录方式。
+              </div>
             </template>
 
             <div class="register-cta" v-if="!oidcEnabled && registrationEnabled">
@@ -641,11 +657,37 @@ const loadOIDCConfig = async () => {
     oidcProviderName.value = response.provider_display_name || ''
     // 多 IdP 列表；为空 = 单 IdP 老形态（一个按钮，文案不变）
     oidcProviders.value = response.providers || []
+    await maybeJumpToPathProvider()
   } catch {
     oidcEnabled.value = false
     oidcProviderName.value = ''
     oidcProviders.value = []
   }
+}
+
+// 路径直达：/edu/login（= 434 生产机的 Casdoor）、/zkju/login（= 457 的）、
+// /dev/login（= 开发机本地账号）。
+// 一套开发机 WeKnora 顶多个生产机，路径就是「去哪台机器登录」的入口 ——
+// 带上路径就不必在按钮里挑，直接跳对应 IdP。
+// 后端没配这个 IdP 时留在登录页并给出提示（而不是静默跳错地方）。
+const providerPathError = ref('')
+// 本地账号登录（用户名密码）：OIDC 开启时默认隐藏，/dev/login 或点按钮后显示
+const localLogin = ref(false)
+const maybeJumpToPathProvider = async () => {
+  const wanted = String(route.params.provider || route.query.provider || '').trim()
+  if (!wanted) return
+  if (wanted === 'dev' || wanted === 'local') {
+    // 开发机入口：本地账号，不跳任何 IdP
+    localLogin.value = true
+    return
+  }
+  const hit = oidcProviders.value.find((p) => p.id === wanted)
+  if (!hit) {
+    providerPathError.value = wanted
+    return
+  }
+  providerPathError.value = ''
+  await handleOIDCLogin(wanted)
 }
 
 // loadAuthConfig fetches /auth/config and caches whether self-service
@@ -800,6 +842,11 @@ const handleRegister = async () => {
 
 // Check if already logged in; for lite edition, attempt transparent auto-setup
 onMounted(async () => {
+  // /dev/login —— 开发机本地账号入口：不依赖 OIDC 配置，先把表单切出来
+  if (String(route.params.provider || '') === 'dev') {
+    localLogin.value = true
+  }
+
   // Share-link landing: ?token=xxx switches the form into invite-
   // register mode before any other auto-flow (logged-in redirect /
   // auto-setup / OIDC) gets a chance to redirect. Resolution failure
@@ -1610,6 +1657,28 @@ onMounted(async () => {
   border-radius: var(--app-radius-md);
   font-size: var(--app-text-lg);
   font-weight: 500;
+}
+
+/* 路径直达失败提示（/xxx/login 对应的 IdP 没配） */
+.provider-path-error {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--app-radius-sm);
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+  font-size: var(--app-text-sm);
+  line-height: 1.5;
+}
+
+/* 本地账号入口（开发机用） */
+.oidc-button.local-entry {
+  margin-top: 8px;
+  font-weight: 400;
+}
+
+/* 本地表单里的「返回组织账号」出口 */
+.local-login-back {
+  margin-top: 12px;
 }
 
 .form-footer {
