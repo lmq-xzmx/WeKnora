@@ -177,3 +177,50 @@ dev 里曾有 dev 自建的 `praxis-答题方法库`（`6e6788ed…`，20 篇）
 - 引用了被删库的 API Key 白名单已同步改指生产版（`geo-k-integration`）
 - **未删**：`geo-k-v1-test` / `geo-monitor` / `小小知识库2` —— 生产没有同名版，
   是 dev 自有测试库，不在「同名以生产为准」范围内（另有几个重复上传的空库，可另行清理）
+
+
+## 六、巡检脚本：向量健康（2026-11-12）
+
+WeKnora 的检索**静默失败** —— chunk 落库了但 embeddings 没落，检索照样返回
+HTTP 200 + 空结果列表，从接口上完全看不出是「没向量」。这次迁 434 数据时
+踩过（生产向量在已停用的 Qdrant 里，PG 的 embeddings 表几乎没数据），
+排查花了好几轮。
+
+```bash
+bash scripts/check-kb-vectors.sh      # 只读巡检，输出 5 节
+```
+
+| 节 | 查什么 | 挂了会怎样 |
+|----|--------|-----------|
+| 1 | 每库 chunk 数 vs embedding 数 | 缺向量 → 检索返空 |
+| 2 | embedding 维度 vs 模型声明维度 | 不一致 → 向量检索对不上 |
+| 3 | 各库 embedding 模型指向 | **模型悬空** → 回填/新文档处理失败 |
+| 3b | summary 模型是否悬空 | 悬空 → 摘要/答案生成失败 |
+| 4 | indexing_strategy 的 vector/keyword 开关 | 关了 → 检索返空 |
+| 5 | 孤儿 embeddings（指向已软删的库） | 清理候选 |
+
+### 巡检查出的真问题：模型引用悬空
+
+**迁移时漏了 `models` 表** —— 迁入库的 `embedding_model_id` /
+`summary_model_id` 指向生产的模型 id，dev 的 `models` 表里查不到：
+
+| 悬空引用 | 数量 | 后果 |
+|---------|:---:|------|
+| `embedding_model_id = 'c08a240a-…'` | 4 个库 | 新文档算向量直接失败 |
+| `summary_model_id` 悬空 | 12 个库 | 摘要/答案生成失败 |
+
+已备好修复脚本 **`scripts/fix-dangling-model-refs.sql`**（待人工执行）：
+把悬空引用改指 dev 已有的等价模型 —— embedding → `builtin-bge-m3-local`
+（本机 ollama bge-m3，1024 维，与 dev 已有的全部向量同维，不需要重新回填）；
+summary → `75a79565…`（MiniMax-M3.1-Flash-Preview，KnowledgeQA）。
+执行前自动备份到 `bak_kb_model_20261112`，文件末尾附回滚 SQL。
+
+> 迁数据时**别只迁业务表** —— `models` 这类「引用字典表」不跟着迁，
+> 迁入的库就是一堆悬空指针，且平时完全看不出来（要等到回填/上传才炸）。
+
+### 顺带查明：457 的 chunk 缺口不是迁移丢的
+
+`ima知识库`（源 457 的库）在**生产上就已软删**（2026-10-20），
+其 3110 个 chunk 随之失效 —— 不是迁移丢的。dev 里几个 457 库 chunk=0
+同理（源库本来就没数据）。迁移本身是忠实的。
+
