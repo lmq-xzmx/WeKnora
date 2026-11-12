@@ -77,3 +77,6 @@ migrations/sqlite/
 *.bak
 docker-compose.override.yml
 docker-compose.override.yml
+
+# 本地含 Casdoor secret 的场景配置（不入 git）
+deploy/profiles/*.local.env
