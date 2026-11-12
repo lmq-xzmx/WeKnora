@@ -1861,6 +1861,15 @@ func (s *userService) exchangeOIDCCode(ctx context.Context, cfg *config.OIDCAuth
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
+	// 客户端凭据同时用 HTTP Basic 带一份。
+	//
+	// 为什么：不同 IdP 读凭据的位置不一样 ——
+	//   Casdoor 的 token 端点先看 URL query，再看 JSON 请求体，
+	//   **表单体里的 client_id/client_secret 它不一定读得到**，
+	//   读不到就会走「client_id is invalid」→ 401。
+	//   RFC 6749 §2.3.1 说客户端可以用 Basic 或请求体，这里两个都给，
+	//   哪边认就哪边用，不用为每个 IdP 单独适配。
+	req.SetBasicAuth(cfg.ClientID, cfg.ClientSecret)
 
 	resp, err := newOIDCHTTPClient().Do(req)
 	if err != nil {
@@ -1868,8 +1877,18 @@ func (s *userService) exchangeOIDCCode(ctx context.Context, cfg *config.OIDCAuth
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("OIDC token exchange failed: status=%d", resp.StatusCode)
+		// 把 IdP 的错误详情带出来。
+		//
+		// 原来只报 "status=401" —— 但 401 在 OIDC 里有好几种含义：
+		// 凭据没送到、secret 不对、应用不存在、code 过期……
+		// 光看状态码根本分不出是哪一个，只能去读 IdP 的源码。
+		// IdP 都会在 body 里给 error / error_description，带上就一眼看出。
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		detail := strings.TrimSpace(string(body))
+		if detail == "" {
+			return nil, fmt.Errorf("OIDC token exchange failed: status=%d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("OIDC token exchange failed: status=%d body=%s", resp.StatusCode, detail)
 	}
 
 	var tokenResp oidcTokenResponse
