@@ -4,6 +4,40 @@
 > （36.212.140.68 = 457，36.213.66.254 = 434），按 **Casdoor 账号**区分登录入口，
 > 并把各生产机的 WeKnora 数据各迁一套到开发机，以更真实地模拟生产。
 
+## 〇、2026-11-13 变更：开发机不再设自己的 Casdoor
+
+**架构定案**：1 台开发机对着多台生产机，**仅通过配置差异化**满足不同部署要求。
+开发机的登录入口**全部直连各生产机自己的 Casdoor**，本地不再跑 Casdoor。
+
+| provider | 按钮 | Casdoor | client_id |
+|---|---|---|---|
+| `zkju` | 中科矩账号（457 生产机） | http://36.212.140.68:3012 | 6afaa316e54e775f5152 |
+| `edu` | 教育账号（434 生产机） | http://36.213.66.254:3012 | 6652addd1eecb053980a |
+| `zhaoyun` | 兆云账号（881 生产机） | http://36.140.179.34:3012 | 70404d353ca3fd4331d7 |
+
+- 启动：`./scripts/run-local.sh --profile multiprov.local --bg`
+- provider JSON 只放 `deploy/profiles/multiprov.local.env`（含密钥，不入 git）。
+  **`.env` 里不要再放 `OIDC_AUTH_PROVIDERS_JSON`** —— profile 覆盖 .env，放两份只会误导。
+- 已删 `deploy/profiles/local-casdoor.env`（本地 Casdoor 场景）。
+- 本机 Casdoor 容器（5011）仍保留，但只服务 geo-platform 的
+  geo-monitor / geo-knowledge / geo-flow（JWKS 验签链），与 WeKnora 登录无关。
+
+### 顺带修掉的 401（token 交换阶段）
+
+Casdoor 的 token 端点只在 **URL query / JSON 请求体 / HTTP Basic** 三处找 client 凭据，
+**表单体里那份读不到** —— 凭据没送到就判 `invalid_client` → 401。
+而且它调 `ValidateOAuth(true)`，**根本不比对 secret**，所以「换个 secret 试」永远试不出来。
+
+修法（`internal/application/service/user.go`）：换 token 时同时用 HTTP Basic 带一份凭据，
+失败时把 IdP 的响应体带回来（`error` / `error_description`），401 不再是黑盒。
+
+**怎么自检**（不用真实登录）：发一个假 code 的 authorization_code 请求 ——
+凭据被接受 → `400 invalid_grant`；凭据没送到 → `401 invalid_client`。
+
+**踩坑**：用 curl 打 Casdoor 的 `/login/oauth/authorize` 会 404，浏览器却正常 ——
+它认浏览器 UA。验授权链路要用真浏览器。
+
+
 ## 一、多 Casdoor（登录入口）
 
 ### 配置
