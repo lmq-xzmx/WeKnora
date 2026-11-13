@@ -37,6 +37,51 @@ Casdoor 的 token 端点只在 **URL query / JSON 请求体 / HTTP Basic** 三�
 **踩坑**：用 curl 打 Casdoor 的 `/login/oauth/authorize` 会 404，浏览器却正常 ——
 它认浏览器 UA。验授权链路要用真浏览器。
 
+### 再往下一层：多 provider 的 client_secret 曾经根本没被读进来（2026-11-13 修）
+
+上面那个 401 修完后，多 IdP **仍然**登不上另外两家：
+
+```
+[09:02] zhaoyun → invalid_client [admin/生产机：weknora知识库]
+[09:14] edu     → invalid_client [admin/开发机for：43410253：weknora]
+```
+
+根因不在 Casdoor，在 `internal/config/config.go`：
+
+```go
+ClientSecret string `yaml:"client_secret" json:"-"`   // ← json:"-" 双重含义
+```
+
+`json:"-"` 是为了**序列化**时不把密钥带出去（配置回显/日志），
+但它**同时让反序列化也读不到** —— 于是 `OIDC_AUTH_PROVIDERS_JSON` 里写的
+`client_secret` 被静默丢弃，每个 provider 的 secret 变空串，
+`NormalizeOIDCProviders` 就去继承**单 provider 的 secret**（`.env` 里 457 那一份）。
+
+结果：
+
+| provider | 实际发出的 secret | 表现 |
+|---|---|---|
+| zkju（457） | 继承来的恰好就是自己的 | 唯一能用的 |
+| edu（434） | 457 的密钥 | invalid_client |
+| zhaoyun（881） | 457 的密钥 | invalid_client |
+
+**「只有一个入口能用」这个症状有很强的误导性** —— 看着像 Casdoor 侧的应用登记坏了，
+实际是自己没把密钥读进来。
+
+修法：解析时用独立的 wire 结构体承接密钥（结构体本身的 `json:"-"` 不动，
+序列化仍然不泄密）；同时给 `NormalizeOIDCProviders` 加一条约束 ——
+provider 指向**另一个 Casdoor** 且带**自己的 client_id** 时，不许继承别家的密钥
+（宁可留空报错，也别悄悄用错密钥）；并在启动日志里打印每个 provider 的
+`secret=已配置/缺失`：
+
+```
+[config] OIDC provider id=edu issuer=http://36.213.66.254:3012 client_id=6652addd1eecb053980a secret=已配置
+```
+
+改完记得**重启开发机实例**（`./scripts/run-local.sh --profile multiprov.local --bg`），
+否则进程里还是旧的解析结果 —— 二进制是 01:17 编的，profile 是 08:53 加载的，
+这类「配置对但进程旧」的错位最容易误判成「改了没用」。
+
 
 ## 一、多 Casdoor（登录入口）
 

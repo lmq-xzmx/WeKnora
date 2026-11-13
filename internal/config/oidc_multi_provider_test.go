@@ -177,3 +177,64 @@ func TestOIDCProvidersFromEnv_BadJSONIgnored(t *testing.T) {
 		t.Fatalf("bad json must yield 0 providers, got %d", len(providers))
 	}
 }
+
+// TestParseOIDCProvidersJSON_ReadsClientSecret
+// JSON 里的 client_secret 必须被解析出来。
+//
+// 踩过的坑（2026-11-13）：OIDCProviderConfig.ClientSecret 的 tag 是
+// `json:"-"`（不序列化出去，防泄密），但它**同时让反序列化也读不到** ——
+// 于是多 Casdoor 场景里所有 provider 的 secret 都是空串，转而继承单
+// provider 的 secret（＝另一家 Casdoor 的），换 token 一律 invalid_client，
+// 而只有第一个 provider 恰好能用。
+//
+// 这条测试就是为了钉住「secret 能从 JSON 进来」。
+func TestParseOIDCProvidersJSON_ReadsClientSecret(t *testing.T) {
+	raw := `[{"id":"zkju","issuer_url":"http://a:3012","client_id":"cid-a","client_secret":"secret-a"},
+	         {"id":"edu","issuer_url":"http://b:3012","client_id":"cid-b","client_secret":"secret-b"}]`
+	providers := parseOIDCProvidersJSON(raw)
+	if len(providers) != 2 {
+		t.Fatalf("expected 2 providers, got %d", len(providers))
+	}
+	if providers[0].ClientSecret != "secret-a" {
+		t.Errorf("zkju client_secret should be parsed, got %q", providers[0].ClientSecret)
+	}
+	if providers[1].ClientSecret != "secret-b" {
+		t.Errorf("edu client_secret should be parsed, got %q", providers[1].ClientSecret)
+	}
+}
+
+// TestNormalizeOIDCProviders_OwnIdpDoesNotInheritForeignSecret
+// provider 指向**另一个 Casdoor** 且没配自己的 secret 时，
+// 不能继承单 provider 的 secret（那是别家的密钥）—— 否则换 token 必然
+// invalid_client，而且错得毫无痕迹（2026-11-13 实际踩过）。
+//
+// 同一家 Casdoor 的第二个应用（issuer 相同）仍然允许继承。
+func TestNormalizeOIDCProviders_OwnIdpDoesNotInheritForeignSecret(t *testing.T) {
+	cfg := &OIDCAuthConfig{
+		IssuerURL:    "http://casdoor-a:3012",
+		ClientID:     "client-a",
+		ClientSecret: "secret-a",
+		Providers: []OIDCProviderConfig{
+			{ID: "zkju", IssuerURL: "http://casdoor-a:3012", ClientID: "client-a", ClientSecret: "secret-a"},
+			{ID: "edu", IssuerURL: "http://casdoor-b:3012", ClientID: "client-b"},
+		},
+	}
+	got := cfg.NormalizeOIDCProviders()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 providers, got %d", len(got))
+	}
+	if got[1].ClientSecret != "" {
+		t.Errorf("edu must NOT inherit another IdP's secret, got %q", got[1].ClientSecret)
+	}
+	// 同一个 IdP 上的另一个应用：继承仍然成立
+	sameIdP := &OIDCAuthConfig{
+		IssuerURL:    "http://casdoor-a:3012",
+		ClientSecret: "secret-a",
+		Providers: []OIDCProviderConfig{
+			{ID: "second", IssuerURL: "http://casdoor-a:3012", ClientID: "client-a2"},
+		},
+	}
+	if v := sameIdP.NormalizeOIDCProviders()[0].ClientSecret; v != "secret-a" {
+		t.Errorf("same IdP should still inherit secret, got %q", v)
+	}
+}

@@ -814,6 +814,20 @@ func applyOIDCEnvOverrides(cfg *Config) {
 	if value := strings.TrimSpace(os.Getenv("OIDC_AUTH_PROVIDERS_JSON")); value != "" {
 		if providers := parseOIDCProvidersJSON(value); len(providers) > 0 {
 			cfg.OIDCAuth.Providers = providers
+			// 启动时把「每个 provider 有没有 secret」打出来。
+			//
+			// 少一个 secret 的症状是「换 token 时 invalid_client」，而那条错
+			// 在现场看像是 IdP 的锅（实际 2026-11-13 就为这个查了半小时
+			// Casdoor 的应用表）。启动日志里能一眼看到「这个 provider 没密钥」
+			// 才算把问题挡在门口。
+			for _, p := range cfg.OIDCAuth.NormalizeOIDCProviders() {
+				secretState := "secret=缺失"
+				if p.ClientSecret != "" {
+					secretState = "secret=已配置"
+				}
+				fmt.Printf("[config] OIDC provider id=%s issuer=%s client_id=%s %s\n",
+					p.ID, p.IssuerURL, p.ClientID, secretState)
+			}
 		}
 	}
 
@@ -884,7 +898,30 @@ func (c *OIDCAuthConfig) NormalizeOIDCProviders() []OIDCProviderConfig {
 			p.ClientID = c.ClientID
 		}
 		if p.ClientSecret == "" {
-			p.ClientSecret = c.ClientSecret
+			// 继承单 provider 的 secret 只在「还是同一个应用」时成立。
+			//
+			// 危险组合：provider 指向**另一个 Casdoor**、还带**自己的 client_id**，
+			// 却没写自己的 secret → 继承来的就是别家的密钥，换 token 时必然
+			// invalid_client，而且错得毫无痕迹（2026-11-13 踩过：edu / zhaoyun
+			// 两个 provider 都在拿 457 的 secret 去敲别人家的门）。
+			//
+			// 这种情况下宁可留空 + 告警：空 secret 换 token 会立刻报
+			// invalid_client，能一眼看出「这个 provider 没配 secret」，
+			// 比悄悄用错密钥好排查得多。
+			//
+			// 而「同一个 IdP 上的另一个应用」（provider 没写 client_id，
+			// 继承下来就是同一个）仍然照旧继承，不受影响。
+			foreignApp := ownIdp &&
+				strings.TrimSuffix(p.IssuerURL, "/") != strings.TrimSuffix(c.IssuerURL, "/") &&
+				p.ClientID != "" && p.ClientID != c.ClientID
+			if foreignApp {
+				fmt.Printf("[WARN] OIDC provider %q 指向 %s（client_id=%s），"+
+					"与单 provider 的 IdP 不同却没有配自己的 client_secret —— "+
+					"不继承别家的密钥（换 token 会 invalid_client）\n",
+					p.ID, p.IssuerURL, p.ClientID)
+			} else {
+				p.ClientSecret = c.ClientSecret
+			}
 		}
 		if !ownIdp {
 			if p.AuthorizationEndpoint == "" {
@@ -947,15 +984,41 @@ func (c *OIDCAuthConfig) NormalizeOIDCProviders() []OIDCProviderConfig {
 //
 // 解析失败 → 返回空并记日志，**不让服务起不来**：OIDC 只是登录方式之一，
 // 配置坏了应该回落到单 provider，而不是整个 WeKnora 打不开。
+//
+// ⚠️ client_secret 必须在这里单独解出来：
+//
+// OIDCProviderConfig.ClientSecret 的 tag 是 `json:"-"`（故意不让配置被序列化
+// 出去时带出密钥），但 **json:"-" 同时也让它无法被反序列化** —— 于是
+// OIDC_AUTH_PROVIDERS_JSON 里写的 client_secret 被静默丢弃，provider 的
+// secret 变成空串，后面 NormalizeOIDCProviders 又去继承「单 provider 的
+// secret」＝另一个 Casdoor 的那一份。
+//
+// 后果（2026-11-13 实测）：多 Casdoor 场景里只有第一个 provider 能登录，
+// 其余全部 invalid_client（"client_secret is invalid for application"），
+// 而且日志完全看不出是「secret 没送到」——排查方向被带偏到 IdP 那边。
+//
+// 所以这里用一个**只在解析时存在**的 wire 结构体承接密钥，不改结构体本身的
+// json tag（序列化时依然不会泄出）。
 func parseOIDCProvidersJSON(raw string) []OIDCProviderConfig {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
 	}
-	var providers []OIDCProviderConfig
-	if err := json.Unmarshal([]byte(raw), &providers); err != nil {
+	var wire []struct {
+		OIDCProviderConfig
+		ClientSecret string `json:"client_secret"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
 		fmt.Printf("[WARN] OIDC_AUTH_PROVIDERS_JSON 解析失败，多 IdP 登录未启用: %v\n", err)
 		return nil
+	}
+	providers := make([]OIDCProviderConfig, 0, len(wire))
+	for _, w := range wire {
+		p := w.OIDCProviderConfig
+		if p.ClientSecret == "" {
+			p.ClientSecret = w.ClientSecret
+		}
+		providers = append(providers, p)
 	}
 	return providers
 }
