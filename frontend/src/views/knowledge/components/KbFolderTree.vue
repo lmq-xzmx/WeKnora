@@ -30,105 +30,107 @@
       </t-tooltip>
     </div>
 
-    <div v-if="!collapsed" class="kb-folder-tree__body">
-      <template v-if="loading && !tree">
-        <div v-for="n in 5" :key="'folder-skel-' + n" class="kb-folder-tree__skeleton">
-          <t-skeleton animation="gradient" :row-col="[{ width: '100%', height: '16px' }]" />
-        </div>
-      </template>
-      <template v-else>
-        <div
-          v-for="row in rows"
-          :key="row.path || '__root__'"
-          class="kb-folder-row"
-          :class="{
-            active: selectedPath === row.path,
-            'is-root': row.kind === 'root',
-            'is-editable': canEdit && row.kind === 'folder',
-            'is-menu-open': menuOpenPath === row.path,
-          }"
-          :style="{ '--kb-folder-depth': row.depth }"
-          :title="row.kind === 'root' ? t('knowledgeBase.folderTree.rootRowTip') : row.path"
-          role="button"
-          tabindex="0"
-          @click="emit('select', row.path)"
-          @keydown.enter.self="emit('select', row.path)"
-          @keydown.space.prevent.self="emit('select', row.path)"
-        >
-          <span
-            v-if="row.hasChildren"
-            class="kb-folder-row__toggle"
+    <div v-if="!collapsed" ref="bodyEl" class="kb-folder-tree__body" @wheel="onWheel">
+      <div class="kb-folder-tree__content">
+        <template v-if="loading && !tree">
+          <div v-for="n in 5" :key="'folder-skel-' + n" class="kb-folder-tree__skeleton">
+            <t-skeleton animation="gradient" :row-col="[{ width: '100%', height: '16px' }]" />
+          </div>
+        </template>
+        <template v-else>
+          <div
+            v-for="row in rows"
+            :key="row.path || '__root__'"
+            class="kb-folder-row"
+            :class="{
+              active: selectedPath === row.path,
+              'is-root': row.kind === 'root',
+              'is-editable': canEdit && row.kind === 'folder',
+              'is-menu-open': menuOpenPath === row.path,
+            }"
+            :style="{ '--kb-folder-depth': row.depth }"
+            :title="row.kind === 'root' ? t('knowledgeBase.folderTree.rootRowTip') : row.path"
             role="button"
             tabindex="0"
-            :aria-expanded="isExpanded(row.path)"
-            @keydown.enter.stop.prevent="toggle(row.path)"
-            @keydown.space.stop.prevent="toggle(row.path)"
-            :aria-label="t(isExpanded(row.path)
-              ? 'knowledgeBase.folderTree.collapseFolder'
-              : 'knowledgeBase.folderTree.expandFolder')"
-            @click.stop="toggle(row.path)"
+            @click="emit('select', row.path)"
+            @keydown.enter.self="emit('select', row.path)"
+            @keydown.space.prevent.self="emit('select', row.path)"
           >
-            <t-icon :name="isExpanded(row.path) ? 'chevron-down' : 'chevron-right'" />
-          </span>
-          <span v-else class="kb-folder-row__toggle-placeholder" aria-hidden="true" />
-
-          <t-icon
-            :name="row.kind === 'root' || (row.hasChildren && isExpanded(row.path)) ? 'folder-open' : 'folder'"
-            class="kb-folder-row__icon"
-          />
-
-          <input
-            v-if="isRenaming(row)"
-            ref="renameInputRef"
-            v-model="renameValue"
-            class="kb-folder-row__rename"
-            :placeholder="t('knowledgeBase.folderTree.renamePlaceholder')"
-            @click.stop
-            @keydown.enter="commitRename(row)"
-            @keydown.esc="cancelRename"
-            @blur="commitRename(row)"
-          />
-          <template v-else>
-            <span class="kb-folder-row__label">
-              {{ row.kind === 'root' ? (rootLabel || t('knowledgeBase.folderTree.rootRow')) : row.name }}
+            <span
+              v-if="row.hasChildren"
+              class="kb-folder-row__toggle"
+              role="button"
+              tabindex="0"
+              :aria-expanded="isExpanded(row.path)"
+              @keydown.enter.stop.prevent="toggle(row.path)"
+              @keydown.space.stop.prevent="toggle(row.path)"
+              :aria-label="t(isExpanded(row.path)
+                ? 'knowledgeBase.folderTree.collapseFolder'
+                : 'knowledgeBase.folderTree.expandFolder')"
+              @click.stop="toggle(row.path)"
+            >
+              <t-icon :name="isExpanded(row.path) ? 'chevron-down' : 'chevron-right'" />
             </span>
-            <span class="kb-folder-row__trailing">
-              <span class="kb-folder-row__count"
-                :title="t('knowledgeBase.folderTree.countHint', { direct: row.documentCount, total: row.totalCount })">
-                {{ row.documentCount }}
+            <span v-else class="kb-folder-row__toggle-placeholder" aria-hidden="true" />
+
+            <t-icon
+              :name="row.kind === 'root' || (row.hasChildren && isExpanded(row.path)) ? 'folder-open' : 'folder'"
+              class="kb-folder-row__icon"
+            />
+
+            <input
+              v-if="isRenaming(row)"
+              ref="renameInputRef"
+              v-model="renameValue"
+              class="kb-folder-row__rename"
+              :placeholder="t('knowledgeBase.folderTree.renamePlaceholder')"
+              @click.stop
+              @keydown.enter="commitRename(row)"
+              @keydown.esc="cancelRename"
+              @blur="commitRename(row)"
+            />
+            <template v-else>
+              <span class="kb-folder-row__label">
+                {{ row.kind === 'root' ? (rootLabel || t('knowledgeBase.folderTree.rootRow')) : row.name }}
               </span>
-              <t-popup
-                v-if="canEdit && row.kind === 'folder'"
-                :visible="menuOpenPath === row.path"
-                trigger="click"
-                placement="bottom-right"
-                destroy-on-close
-                overlay-class-name="card-more-popup"
-                @visible-change="(visible: boolean) => onFolderMenuVisible(row.path, visible)"
-              >
-                <button
-                  type="button"
-                  class="kb-folder-row__more"
-                  :class="{ 'is-open': menuOpenPath === row.path }"
-                  :aria-label="t('knowledgeBase.columnActions')"
-                  @click.stop
+              <span class="kb-folder-row__trailing">
+                <span class="kb-folder-row__count"
+                  :title="t('knowledgeBase.folderTree.countHint', { direct: row.documentCount, total: row.totalCount })">
+                  {{ row.documentCount }}
+                </span>
+                <t-popup
+                  v-if="canEdit && row.kind === 'folder'"
+                  :visible="menuOpenPath === row.path"
+                  trigger="click"
+                  placement="bottom-right"
+                  destroy-on-close
+                  overlay-class-name="card-more-popup"
+                  @visible-change="(visible: boolean) => onFolderMenuVisible(row.path, visible)"
                 >
-                  <t-icon name="more" />
-                </button>
-                <template #content>
-                  <div class="popup-menu kb-folder-row__menu" @click.stop>
-                    <div class="popup-menu-item" @click="onFolderMenuRename(row)">
-                      <t-icon name="edit" class="menu-icon" />
-                      <span>{{ t('knowledgeBase.folderTree.rename') }}</span>
+                  <button
+                    type="button"
+                    class="kb-folder-row__more"
+                    :class="{ 'is-open': menuOpenPath === row.path }"
+                    :aria-label="t('knowledgeBase.columnActions')"
+                    @click.stop
+                  >
+                    <t-icon name="more" />
+                  </button>
+                  <template #content>
+                    <div class="popup-menu kb-folder-row__menu" @click.stop>
+                      <div class="popup-menu-item" @click="onFolderMenuRename(row)">
+                        <t-icon name="edit" class="menu-icon" />
+                        <span>{{ t('knowledgeBase.folderTree.rename') }}</span>
+                      </div>
                     </div>
-                  </div>
-                </template>
-              </t-popup>
-              <span v-else class="kb-folder-row__more-placeholder" aria-hidden="true"></span>
-            </span>
-          </template>
-        </div>
-      </template>
+                  </template>
+                </t-popup>
+                <span v-else class="kb-folder-row__more-placeholder" aria-hidden="true"></span>
+              </span>
+            </template>
+          </div>
+        </template>
+      </div>
     </div>
   </aside>
 </template>
@@ -144,6 +146,7 @@ import {
   ROOT_FOLDER_PATH,
   type FolderRow,
 } from '../folderTree'
+import { resolveHorizontalWheel } from './kbFolderTreeScroll'
 
 const props = withDefaults(defineProps<{
   tree: KnowledgeFolderTree | null
@@ -175,6 +178,30 @@ const renamingPath = ref<string | null>(null)
 const menuOpenPath = ref<string | null>(null)
 const renameValue = ref('')
 const renameInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+const bodyEl = ref<HTMLElement | null>(null)
+
+// 长文件夹名不再截断，侧栏改为横向可滚。触控板横滑 / Shift+滚轮 / 拖滚动条
+// 都由浏览器原生处理；这里补的是「只有 deltaY 的纯鼠标滚轮」——
+// 停在树上滚一下就左右走，而不是把滚动浪费在竖直方向。
+const onWheel = (event: WheelEvent) => {
+  const el = bodyEl.value
+  if (!el) return
+  const next = resolveHorizontalWheel(
+    {
+      canScrollX: el.scrollWidth > el.clientWidth,
+      canScrollY: el.scrollHeight > el.clientHeight,
+      scrollLeft: el.scrollLeft,
+      maxScrollLeft: el.scrollWidth - el.clientWidth,
+      scrollTop: el.scrollTop,
+      remainingY: el.scrollHeight - el.clientHeight - el.scrollTop,
+    },
+    event.deltaX,
+    event.deltaY,
+  )
+  if (next === null) return
+  el.scrollLeft = next
+  event.preventDefault()
+}
 
 const rows = computed(() => buildFolderRows(props.tree, expanded.value))
 
@@ -326,18 +353,29 @@ watch(
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  /* 长文件夹名不再截断：整棵树按最长的名字撑开，靠横向滚动看全。 */
+  overflow-x: auto;
   padding: 8px 0 12px;
   scrollbar-width: thin;
 
   &::-webkit-scrollbar {
     width: 4px;
+    height: 4px;
   }
 
   &::-webkit-scrollbar-thumb {
     border-radius: 2px;
     background: var(--td-scrollbar-color);
   }
+}
+
+/*
+ * 撑开横向内容的那一层：宽度取「最长的行」的宽度，所有行共用，
+ * 于是行宽一致（悬停高亮不会参差），而长名字完整可见。
+ */
+.kb-folder-tree__content {
+  width: max-content;
+  min-width: 100%;
 }
 
 .kb-folder-tree__skeleton {
@@ -420,10 +458,9 @@ watch(
 }
 
 .kb-folder-row__label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* 不再省略号截断：名字按内容撑开，超出侧栏的部分靠横向滚动看。 */
+  flex: 0 1 auto;
+  min-width: max-content;
   white-space: nowrap;
 }
 
@@ -494,6 +531,8 @@ watch(
 .kb-folder-row__rename {
   flex: 1;
   min-width: 0;
+  /* 行宽现在按最长的名字撑开，重命名框不跟着拉成一整行 */
+  max-width: 360px;
   height: 22px;
   padding: 0 6px;
   border: 1px solid var(--td-brand-color);
